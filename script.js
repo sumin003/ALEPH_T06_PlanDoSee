@@ -127,8 +127,8 @@ function sortTasks(a,b,mode){
 function renderTasks(){
  const search=$('taskSearch').value.trim().toLocaleLowerCase('ko');const plan=$('taskPlanFilter').value;
  const status=$('taskStatusFilter').value;const tag=$('taskTagFilter').value.trim().toLocaleLowerCase('ko');const sort=$('taskSort').value;
- const visible=tasks.filter(t=>taskDay(t)===selectedDay&&(plan==='all'||t.planId===plan)&&(status==='all'||(status==='done'?t.done:!t.done))&&(!search||t.title.toLocaleLowerCase('ko').includes(search))&&(!tag||(t.tags||[]).some(x=>x.toLocaleLowerCase('ko').includes(tag)))).sort((a,b)=>sortTasks(a,b,sort));
- $('taskCount').textContent=`${tasks.filter(t=>taskDay(t)===selectedDay).length}개`;
+ const visible=tasks.filter(t=>(plan==='all'||t.planId===plan)&&(status==='all'||(status==='done'?t.done:!t.done))&&(!search||t.title.toLocaleLowerCase('ko').includes(search))&&(!tag||(t.tags||[]).some(x=>x.toLocaleLowerCase('ko').includes(tag)))).sort((a,b)=>sortTasks(a,b,sort));
+ $('taskCount').textContent=`${tasks.length}개`;
  $('taskList').innerHTML=visible.length?visible.map(t=>{
  const p=plans.find(p=>p.id===t.planId);
  return `<article class="task-row ${t.done?'is-done':''}"><div class="task-main"><label class="task-check"><input type="checkbox" data-action="toggle" data-id="${esc(t.id)}" ${t.done?'checked':''}><span class="task-title">${esc(t.title)}</span></label><div class="task-detail"><span>${esc(p?.title||'연결 계획 없음')}</span><span>· ${esc(t.due||'마감일 미정')}</span><span>· 예상 ${t.minutes==null?'미정':esc(t.minutes)+'분'}</span><span>· ${esc(({high:'높음',normal:'보통',low:'낮음'})[t.priority]||'보통')}</span>${(t.tags||[]).map(tag=>`<span class="task-tag">#${esc(tag)}</span>`).join('')}</div></div><div class="task-buttons"><button class="ghost" data-action="edit" data-id="${esc(t.id)}">수정</button><button class="ghost danger" data-action="delete" data-id="${esc(t.id)}">삭제</button></div></article>`;
@@ -136,7 +136,7 @@ function renderTasks(){
  renderPlanPreviews();
 }
 function renderPlanPreviews(){document.querySelectorAll('.plan').forEach((card,i)=>{
- const p=plans.filter(planVisible)[i];if(!p)return;const list=tasks.filter(t=>t.planId===p.id&&taskDay(t)===selectedDay);
+ const p=plans.filter(planVisible)[i];if(!p)return;const list=tasks.filter(t=>t.planId===p.id);
  card.querySelector('.task-preview-head span').textContent=`DO · ${list.length}개`;
  card.querySelector('.preview-items').innerHTML=list.length?list.slice(0,4).map(t=>`<div class="preview-item ${t.done?'done':''}">${t.done?'☑':'□'} ${esc(t.title)}</div>`).join('')+(list.length>4?`<p>외 ${list.length-4}개</p>`:''):'<p>아직 등록한 할 일이 없어요.</p>';
  });}
