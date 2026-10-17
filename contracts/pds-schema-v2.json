@@ -16,14 +16,17 @@
     "taskDue": "YYYY-MM-DD (local calendar date)",
     "executionStartedAtEndedAt": "ISO 8601 UTC timestamp; UI inputs use browser local datetime",
     "executionElapsedMs": "endedAt - startedAt, strictly positive milliseconds",
-    "createdAtUpdatedAt": "ISO 8601 UTC"
+    "createdAtUpdatedAt": "ISO 8601 UTC",
+    "taskDay": "YYYY-MM-DD browser-local calendar date, defaults to selected day",
+    "dailyView": "selectedDay defaults to current browser-local date; plan period includes selectedDay; tasks filtered by day",
+    "comparison": "estimated and actual duration are compared for completed tasks with execution records on selected date"
   },
   "document": {
     "schemaVersion": "integer 2",
     "exportedAt": "ISO 8601 UTC",
     "plans": "array of plan objects, including revisions",
-    "tasks": "array of task objects linked by planId",
-    "executions": "array of execution records linked by taskId and planId",
+    "tasks": "array of task objects linked by planId; day YYYY-MM-DD local execution date; due optional deadline",
+    "executions": "array of execution records linked by taskId and planId; isCompletion=true unique per task by application logic",
     "reflections": "array of reflections linked to source/next plan"
   },
   "security": {
