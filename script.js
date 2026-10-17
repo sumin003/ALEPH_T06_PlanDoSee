@@ -70,7 +70,7 @@ try {
 
 // 이후 계획이 추가되어도 기존 ID와 충돌하지 않도록 사용된 번호를 확인합니다.
 function nextPlanId(){let n=1;while(plans.some(p=>p.id===`PLAN-${String(n).padStart(3,'0')}`))n++;return `PLAN-${String(n).padStart(3,'0')}`}
-function saveTasks(next){try{localStorage.setItem(TASK_KEY,JSON.stringify(next));tasks=next;queueRemoteSave();return true}catch(e){alert('할 일을 저장하지 못했어요. 브라우저 저장 공간을 확인해주세요.');return false}}
+function saveTasks(next){try{localStorage.setItem(TASK_KEY,JSON.stringify(next));tasks=next;if(typeof remoteReady!=='undefined')queueRemoteSave();return true}catch(e){alert('할 일을 저장하지 못했어요. 브라우저 저장 공간을 확인해주세요.');return false}}
 if(migrated)persist();
 
 function persist(){try{localStorage.setItem(KEY,JSON.stringify(plans));queueRemoteSave();return true}catch(e){alert('브라우저 저장에 실패했습니다. 저장 공간 또는 브라우저 설정을 확인해주세요.');return false}}
@@ -136,7 +136,7 @@ function renderTasks(){
  renderPlanPreviews();
 }
 function renderPlanPreviews(){document.querySelectorAll('.plan').forEach((card,i)=>{
- const p=plans[i];if(!p)return;const list=tasks.filter(t=>t.planId===p.id);
+ const p=plans.filter(planVisible)[i];if(!p)return;const list=tasks.filter(t=>t.planId===p.id&&taskDay(t)===selectedDay);
  card.querySelector('.task-preview-head span').textContent=`DO · ${list.length}개`;
  card.querySelector('.preview-items').innerHTML=list.length?list.slice(0,4).map(t=>`<div class="preview-item ${t.done?'done':''}">${t.done?'☑':'□'} ${esc(t.title)}</div>`).join('')+(list.length>4?`<p>외 ${list.length-4}개</p>`:''):'<p>아직 등록한 할 일이 없어요.</p>';
  });}
