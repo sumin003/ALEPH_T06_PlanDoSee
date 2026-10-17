@@ -268,20 +268,14 @@ function updateReflectionOptions(){
   if([...select.options].some(o=>o.value===prev))select.value=prev;
  }
 }
-function renderReflections(){
- updateReflectionOptions();
+let seeActiveGroup='seePlanned';
+function reflectionSelection(){
  const planId=$('reflectionPlan').value,from=$('reflectionFrom').value,to=$('reflectionTo').value;
- $('reflectionError').textContent=from&&to&&from>to?'시작 날짜는 종료 날짜보다 늦을 수 없어요.':'';
- const selected=tasks.filter(t=>(planId==='all'||t.planId===planId)&&dayIn(taskDay(t),from,to));
- const ids=new Set(selected.map(t=>t.id));
- const logs=executions.filter(l=>ids.has(l.taskId)&&dayIn(localDay(l.startedAt),from,to));
- const done=selected.filter(t=>t.done);
- const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
- const late=selected.filter(t=>!t.done&&t.due&&t.due<today);
- const blockedIds=new Set(logs.filter(l=>l.reason&&l.reason.trim()).map(l=>l.taskId));
- const blocked=selected.filter(t=>blockedIds.has(t.id));
- const estimated=selected.reduce((n,t)=>n+(Number.isFinite(Number(t.minutes))&&t.minutes!==null?Number(t.minutes):0),0);
- const actual=logs.reduce((n,l)=>n+(Number(l.elapsedMs)||0),0)/60000;
+ const {selected,logs,done,late,blocked,focus,focusLogs}=reflectionSelection();
+ const estimated=focus.reduce((n,t)=>n+(Number.isFinite(Number(t.minutes))&&t.minutes!==null?Number(t.minutes):0),0);
+ const actual=focusLogs.reduce((n,l)=>n+(Number(l.elapsedMs)||0),0)/60000;
+ $('seeFocusLabel').textContent=`현재 시간 비교 대상: ${({seePlanned:'전체 할 일',seeDone:'완료한 일',seeLate:'지연된 일',seeBlocked:'막힌 일'})[seeActiveGroup]} ${focus.length}개`;
+ document.querySelectorAll('[data-see-detail]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.seeDetail===seeActiveGroup)));
  $('seePlanned').textContent=selected.length;$('seeDone').textContent=done.length;
  $('seeLate').textContent=late.length;$('seeBlocked').textContent=blocked.length;
  $('seeEstimated').textContent=fmtMinutes(estimated);$('seeActual').textContent=fmtMinutes(actual);
@@ -297,14 +291,11 @@ function renderReflections(){
 }
 const evidenceNames={seePlanned:'계획에 딸린 할 일',seeDone:'완료한 일',seeLate:'지연된 일',seeBlocked:'막힌 일',seeEstimated:'예상 시간',seeActual:'실제 시간'};
 document.querySelectorAll('[data-see-detail]').forEach(b=>b.addEventListener('click',()=>{
- const planId=$('reflectionPlan').value,from=$('reflectionFrom').value,to=$('reflectionTo').value;
- const selected=tasks.filter(t=>(planId==='all'||t.planId===planId)&&dayIn(taskDay(t),from,to));
- const ids=new Set(selected.map(t=>t.id));
- const logs=executions.filter(l=>ids.has(l.taskId)&&dayIn(localDay(l.startedAt),from,to));
- const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
  const key=b.dataset.seeDetail;
- const items=key==='seeDone'?selected.filter(t=>t.done):key==='seeLate'?selected.filter(t=>!t.done&&t.due&&t.due<today):key==='seeBlocked'?selected.filter(t=>logs.some(l=>l.taskId===t.id&&l.reason?.trim())):selected;
- const lines=key==='seeActual'?logs.map(l=>`${l.taskTitle||tasks.find(t=>t.id===l.taskId)?.title||'연결된 할 일 없음'} · ${durationText(l.elapsedMs)} · ${new Date(l.startedAt).toLocaleDateString('ko-KR',{timeZone:'Asia/Seoul'})}`):items.map(t=>`${t.title}${key==='seeEstimated'?' · 예상 '+fmtMinutes(Number(t.minutes)||0):''}`);
+ if(['seePlanned','seeDone','seeLate','seeBlocked'].includes(key))seeActiveGroup=key;
+ renderReflections();
+ const {focus,focusLogs}=reflectionSelection();
+ const lines=key==='seeActual'?focusLogs.map(l=>`${l.taskTitle||tasks.find(t=>t.id===l.taskId)?.title||'연결된 할 일 없음'} · ${durationText(l.elapsedMs)} · ${new Date(l.startedAt).toLocaleDateString('ko-KR',{timeZone:'Asia/Seoul'})}`):focus.map(t=>`${t.title} · 예상 ${fmtMinutes(Number(t.minutes)||0)}`);
  $('seeEvidencePanel').hidden=false;
  $('seeEvidence').innerHTML='<strong>'+esc(evidenceNames[key]||'집계')+'의 근거</strong>'+(lines.length?'<ul>'+lines.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<p>해당 기록이 없어요.</p>');
  $('seeEvidence').scrollIntoView({behavior:'smooth',block:'nearest'});
