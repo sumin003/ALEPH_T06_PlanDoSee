@@ -19,15 +19,16 @@
     "createdAtUpdatedAt": "ISO 8601 UTC",
     "taskDay": "YYYY-MM-DD browser-local calendar date, defaults to selected day",
     "dailyView": "selectedDay defaults to current browser-local date; plan period includes selectedDay; tasks filtered by day",
-    "comparison": "estimated and actual duration are compared for completed tasks with execution records on selected date"
+    "comparison": "For selected tasks, estimated is sum of task.minutes (missing=0); actual is sum of linked execution elapsedMs / 60000; difference is actual minus estimated.",
+    "overdue": "A task is overdue only if incomplete and due is before today's date in Asia/Seoul."
   },
   "document": {
     "schemaVersion": "integer 2",
     "exportedAt": "ISO 8601 UTC",
     "plans": "array of plan objects, including revisions",
-    "tasks": "array of task objects linked by planId; day YYYY-MM-DD local execution date; due optional deadline",
-    "executions": "array of execution records linked by taskId and planId; isCompletion=true unique per task by application logic",
-    "reflections": "array of reflections linked to source/next plan"
+    "tasks": "array of task objects linked by planId; day YYYY-MM-DD local execution date; due optional deadline; priority-desc is default sort (high, normal, low); estimated duration stored in total minutes.",
+    "executions": "array of execution records linked by taskId and planId; isCompletion=true unique per task by application logic; server rejects multiple isCompletion records for the same taskId.",
+    "reflections": "array of reflections linked to source/next plan; nextPlanId connects improvement memo to the target plan."
   },
   "security": {
     "clientSecret": false,
