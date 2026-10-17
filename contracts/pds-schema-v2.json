@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 2,
+  "name": "PlanDoSee T06",
+  "storage": {
+    "provider": "Supabase PostgreSQL",
+    "table": "public.pds_state",
+    "primaryKey": "id",
+    "documentKey": "main",
+    "payloadColumn": "data",
+    "updatedAt": "updated_at",
+    "api": "/api/state",
+    "publicWithoutLogin": true
+  },
+  "dateRules": {
+    "planStartEnd": "YYYY-MM-DD (local calendar date)",
+    "taskDue": "YYYY-MM-DD (local calendar date)",
+    "executionStartedAtEndedAt": "ISO 8601 UTC timestamp; UI inputs use browser local datetime",
+    "executionElapsedMs": "endedAt - startedAt, strictly positive milliseconds",
+    "createdAtUpdatedAt": "ISO 8601 UTC"
+  },
+  "document": {
+    "schemaVersion": "integer 2",
+    "exportedAt": "ISO 8601 UTC",
+    "plans": "array of plan objects, including revisions",
+    "tasks": "array of task objects linked by planId",
+    "executions": "array of execution records linked by taskId and planId",
+    "reflections": "array of reflections linked to source/next plan"
+  },
+  "security": {
+    "clientSecret": false,
+    "serverEnv": [
+      "SUPABASE_URL",
+      "SUPABASE_SECRET_KEY"
+    ],
+    "note": "No login in T06; anyone with deployed URL may read/write public data."
+  }
+}

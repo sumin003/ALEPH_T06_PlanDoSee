@@ -1,0 +1,356 @@
+'use strict';
+// 카드 1~5: 브라우저 보관 + 배포 시 서버 DB 동기화. 서버 미설정이면 로컬 모드임을 명시합니다.
+const KEY='plandosee-card1-v1';
+const TASK_KEY='plandosee-card2-v1';
+const SORT_KEY='plandosee-task-sort-v1';
+const initialTitles=['정보처리기사 실기 공부하기','ALEPH 과제 하기','ALEPH 수업 복습하기'];
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const emptyText=s=>s?esc(s):'<span class="unset">아직 정하지 않았어요</span>';
+const snapshot=p=>({title:p.title,start:p.start,end:p.end,success:p.success,minutes:p.minutes});
+function load(){try{const raw=localStorage.getItem(KEY);if(raw){const value=JSON.parse(raw);if(Array.isArray(value))return value;}}catch(e){console.warn('저장된 계획을 불러오지 못했습니다.',e)}return initialTitles.map((title,i)=>({id:`initial-${i+1}`,title,start:'',end:'',success:'',minutes:null,revisions:[],createdAt:new Date().toISOString()}));}
+let plans=load(),editingId=null;
+// 기존 카드 1 데이터를 보존하면서 안정적인 계획 ID를 부여합니다.
+const usedIds=new Set();let migrated=false;
+plans.forEach((p,i)=>{let id=p.id;if(/^initial-\d+$/.test(id||'')){id=`PLAN-${String(Number(id.split('-')[1])).padStart(3,'0')}`;}if(!id||usedIds.has(id)){let n=1;while(usedIds.has(`PLAN-${String(n).padStart(3,'0')}`))n++;id=`PLAN-${String(n).padStart(3,'0')}`;}if(p.id!==id){p.id=id;migrated=true;}usedIds.add(id);});
+let tasks=[];
+try{const raw=JSON.parse(localStorage.getItem(TASK_KEY)||'[]');tasks=Array.isArray(raw)?raw:[]}catch(e){console.warn('할 일 데이터를 읽지 못했습니다.',e)}
+// 사용자가 지정한 최초 할 일 5개를 한 번만 등록합니다. 기존 할 일은 삭제하거나 덮어쓰지 않습니다.
+const SEED_KEY='plandosee-task-seed-20261018-v1';
+const initialTasksByPlan={
+ '정보처리기사 실기 공부하기':['이론','코딩','기출문제'],
+ 'ALEPH 과제 하기':['ALEPH_T06 과제하기'],
+ 'ALEPH 수업 복습하기':['필기 정리하기']
+};
+try {
+ if(localStorage.getItem(SEED_KEY)!=='done') {
+  const now=new Date().toISOString();
+  const additions=[];
+  for(const [planTitle,titles] of Object.entries(initialTasksByPlan)) {
+   const plan=plans.find(p=>p.title===planTitle);
+   if(!plan)continue;
+   for(const title of titles) {
+    if(tasks.some(t=>t.planId===plan.id&&t.title===title))continue;
+    additions.push({id:crypto.randomUUID(),planId:plan.id,title,due:'',minutes:null,priority:'normal',tags:[],done:false,createdAt:now,updatedAt:now});
+   }
+  }
+  if(!additions.length||saveTasks([...tasks,...additions]))localStorage.setItem(SEED_KEY,'done');
+ }
+}catch(e){console.warn('초기 할 일 저장을 완료하지 못했습니다.',e)}
+
+// 사용자가 새로 요청한 할 일 3개만 추가합니다. 이전 데이터와 완료 상태는 보존합니다.
+const EXTRA_SEED_KEY='plandosee-task-seed-extra-20261018-v1';
+const extraTasksByPlan={
+ 'ALEPH 과제 하기':['방어전 정리하기'],
+ 'ALEPH 수업 복습하기':['실습 내용 정리하기','수업 내용 복습하기']
+};
+try {
+ if(localStorage.getItem(EXTRA_SEED_KEY)!=='done'){
+  const now=new Date().toISOString(), additions=[];
+  for(const [planTitle,titles] of Object.entries(extraTasksByPlan)){
+   const plan=plans.find(p=>p.title===planTitle);
+   if(!plan)continue;
+   for(const title of titles){
+    if(tasks.some(t=>t.planId===plan.id&&t.title===title))continue;
+    additions.push({id:crypto.randomUUID(),planId:plan.id,title,due:'',minutes:null,priority:'normal',tags:[],done:false,createdAt:now,updatedAt:now});
+   }
+  }
+  if(!additions.length||saveTasks([...tasks,...additions]))localStorage.setItem(EXTRA_SEED_KEY,'done');
+ }
+}catch(e){console.warn('추가 할 일 저장을 완료하지 못했습니다.',e)}
+
+// 이후 계획이 추가되어도 기존 ID와 충돌하지 않도록 사용된 번호를 확인합니다.
+function nextPlanId(){let n=1;while(plans.some(p=>p.id===`PLAN-${String(n).padStart(3,'0')}`))n++;return `PLAN-${String(n).padStart(3,'0')}`}
+function saveTasks(next){try{localStorage.setItem(TASK_KEY,JSON.stringify(next));tasks=next;queueRemoteSave();return true}catch(e){alert('할 일을 저장하지 못했어요. 브라우저 저장 공간을 확인해주세요.');return false}}
+if(migrated)persist();
+
+function persist(){try{localStorage.setItem(KEY,JSON.stringify(plans));queueRemoteSave();return true}catch(e){alert('브라우저 저장에 실패했습니다. 저장 공간 또는 브라우저 설정을 확인해주세요.');return false}}
+function render(){
+  $('count').textContent=`${plans.length}개의 계획`;
+  $('cards').innerHTML=plans.length?plans.map((p,i)=>{
+    const period=p.start||p.end?`${esc(p.start||'미정')} ~ ${esc(p.end||'미정')}`:'미정';
+    const minutes=p.minutes!==null&&p.minutes!==''?`${esc(p.minutes)}분`:'미정';
+    return `<article class="plan">
+      <div class="plan-top"><span class="number">계획 ID · ${esc(p.id)}</span><span class="status">나의 계획</span></div>
+      <h3>${esc(p.title)}</h3>
+      <div class="plan-meta"><span>기간 ${period}</span><span class="meta-separator" aria-hidden="true">·</span><span>예상 시간 ${minutes}</span></div>
+      <div class="success-note"><span class="field-label">성공 기준</span><p>${emptyText(p.success)}</p></div>
+      <div class="task-preview"><div class="task-preview-head"><strong>할 일</strong><span>DO · ${tasks.filter(t=>t.planId===p.id).length}개</span></div><div class="preview-items">${tasks.filter(t=>t.planId===p.id).slice(0,4).map(t=>`<div class="preview-item">${t.done?'☑':'□'} ${esc(t.title)}</div>`).join('')||'<p>아직 등록한 할 일이 없어요.</p>'}</div></div>
+      <div class="actions"><button class="secondary" data-action="edit" data-id="${esc(p.id)}">✎ 계획 수정</button><button class="ghost" data-action="history" data-id="${esc(p.id)}">◷ 수정 이력 (${(p.revisions||[]).length})</button></div>
+    </article>`;
+  }).join(''):'<div class="empty">계획이 아직 없어요. 새 계획을 만들어보세요.</div>';
+}
+function openEditor(id=null){editingId=id;const p=plans.find(x=>x.id===id);$('dialogTitle').textContent=p?'계획 수정하기':'새 계획 만들기';$('planForm').reset();$('formError').textContent='';$('title').value=p?.title||'';$('start').value=p?.start||'';$('end').value=p?.end||'';$('success').value=p?.success||'';$('minutes').value=p?.minutes??'';$('editor').showModal();}
+function showHistory(id){const p=plans.find(x=>x.id===id);if(!p)return;$('historyTitle').textContent=`${p.title} · 수정 이력`;const rev=p.revisions||[];$('historyBody').innerHTML=rev.length?rev.slice().reverse().map((r,i)=>`<div class="revision"><strong>수정 ${rev.length-i}회차</strong> <time>${esc(new Date(r.at).toLocaleString('ko-KR'))}</time><p><strong>수정 전</strong> ${esc(r.before.title)}</p><p><strong>수정 후</strong> ${esc(r.after.title)}</p><p>기간: ${esc(r.before.start||'미정')} ~ ${esc(r.before.end||'미정')} → ${esc(r.after.start||'미정')} ~ ${esc(r.after.end||'미정')}</p><p>성공 기준: ${esc(r.before.success||'미정')} → ${esc(r.after.success||'미정')}</p><p>예상 시간: ${esc(r.before.minutes??'미정')} → ${esc(r.after.minutes??'미정')} (분)</p></div>`).join(''):'<p class="empty">아직 수정 이력이 없어요. 계획을 수정하면 변경 전후 내용이 이곳에 남아요.</p>';$('historyDialog').showModal()}
+$('cards').addEventListener('click',e=>{const b=e.target.closest('button[data-action]');if(!b)return;if(b.dataset.action==='edit')openEditor(b.dataset.id);else showHistory(b.dataset.id)});
+$('addBtn').onclick=()=>openEditor();$('closeBtn').onclick=$('cancelBtn').onclick=()=>$('editor').close();$('historyClose').onclick=$('historyDone').onclick=()=>$('historyDialog').close();
+$('planForm').addEventListener('submit',e=>{e.preventDefault();const title=$('title').value.trim(),start=$('start').value,end=$('end').value,success=$('success').value.trim(),raw=$('minutes').value;const minutes=raw===''?null:Number(raw);if(!title){$('formError').textContent='계획 제목을 입력해주세요.';return}if(start&&end&&start>end){$('formError').textContent='종료 날짜는 시작 날짜보다 빠를 수 없어요.';return}if(raw!==''&&(!Number.isSafeInteger(minutes)||minutes<0)){$('formError').textContent='예상 시간은 0 이상의 정수(분)로 입력해주세요.';return}const next={title,start,end,success,minutes};const previous=plans;const copy=structuredClone(plans);if(editingId){const p=copy.find(x=>x.id===editingId);if(!p)return;const before=snapshot(p);if(JSON.stringify(before)!==JSON.stringify(next)){p.revisions??=[];p.revisions.push({at:new Date().toISOString(),before,after:{...next}});Object.assign(p,next)}}else{copy.push({id:nextPlanId(),...next,revisions:[],createdAt:new Date().toISOString()})}plans=copy;if(!persist()){plans=previous;return}render();$('editor').close();renderTasks();refreshPlanOptions()});
+render();
+refreshPlanOptions();renderTasks();
+
+// 카드 2: 실제 할 일은 사용자 입력 전까지 생성하지 않습니다.
+let editingTaskId=null;
+function refreshPlanOptions(){
+ const filter=$('taskPlanFilter'), selected=filter.value;
+ filter.innerHTML='<option value="all">모든 계획</option>'+plans.map(p=>`<option value="${esc(p.id)}">${esc(p.title)} (${esc(p.id)})</option>`).join('');
+ filter.value=selected==='all'||plans.some(p=>p.id===selected)?selected:'all';
+ $('taskPlan').innerHTML=plans.map(p=>`<option value="${esc(p.id)}">${esc(p.title)} (${esc(p.id)})</option>`).join('');
+}
+function openTaskEditor(id=null,planId=null){
+ editingTaskId=id;const t=tasks.find(t=>t.id===id);
+ $('taskDialogTitle').textContent=t?'할 일 수정':'새 할 일';$('taskForm').reset();$('taskError').textContent='';
+ $('taskPlan').value=t?.planId||planId||plans[0]?.id||'';
+ $('taskTitle').value=t?.title||'';$('taskDue').value=t?.due||'';$('taskMinutes').value=t?.minutes??'';
+ $('taskPriority').value=t?.priority||'normal';$('taskTags').value=(t?.tags||[]).join(', ');
+ $('taskEditor').showModal();
+}
+function sortTasks(a,b,mode){
+ const pri={high:3,normal:2,low:1};let v=0;
+ if(mode==='due-asc'||mode==='due-desc'){
+  if(!a.due&&!b.due)v=0;else if(!a.due)v=1;else if(!b.due)v=-1;else v=mode==='due-asc'?a.due.localeCompare(b.due):b.due.localeCompare(a.due);
+ }else if(mode==='priority-desc')v=pri[b.priority||'normal']-pri[a.priority||'normal'];
+ else if(mode==='priority-asc')v=pri[a.priority||'normal']-pri[b.priority||'normal'];
+ else if(mode==='title-asc')v=a.title.localeCompare(b.title,'ko');
+ else if(mode==='created-asc')v=a.createdAt.localeCompare(b.createdAt);
+ else v=b.createdAt.localeCompare(a.createdAt);
+ return v||a.id.localeCompare(b.id);
+}
+function renderTasks(){
+ const search=$('taskSearch').value.trim().toLocaleLowerCase('ko');const plan=$('taskPlanFilter').value;
+ const status=$('taskStatusFilter').value;const tag=$('taskTagFilter').value.trim().toLocaleLowerCase('ko');const sort=$('taskSort').value;
+ const visible=tasks.filter(t=>(plan==='all'||t.planId===plan)&&(status==='all'||(status==='done'?t.done:!t.done))&&(!search||t.title.toLocaleLowerCase('ko').includes(search))&&(!tag||(t.tags||[]).some(x=>x.toLocaleLowerCase('ko').includes(tag)))).sort((a,b)=>sortTasks(a,b,sort));
+ $('taskCount').textContent=`${tasks.length}개`;
+ $('taskList').innerHTML=visible.length?visible.map(t=>{
+ const p=plans.find(p=>p.id===t.planId);
+ return `<article class="task-row ${t.done?'is-done':''}"><div class="task-main"><label class="task-check"><input type="checkbox" data-action="toggle" data-id="${esc(t.id)}" ${t.done?'checked':''}><span class="task-title">${esc(t.title)}</span></label><div class="task-detail"><span>${esc(p?.title||'연결 계획 없음')}</span><span>· ${esc(t.due||'마감일 미정')}</span><span>· 예상 ${t.minutes==null?'미정':esc(t.minutes)+'분'}</span><span>· ${esc(({high:'높음',normal:'보통',low:'낮음'})[t.priority]||'보통')}</span>${(t.tags||[]).map(tag=>`<span class="task-tag">#${esc(tag)}</span>`).join('')}</div></div><div class="task-buttons"><button class="ghost" data-action="edit" data-id="${esc(t.id)}">수정</button><button class="ghost danger" data-action="delete" data-id="${esc(t.id)}">삭제</button></div></article>`;
+ }).join(''):'<div class="empty">조건에 맞는 할 일이 없어요. 실제로 할 일을 정하면 추가해 주세요.</div>';
+ renderPlanPreviews();
+}
+function renderPlanPreviews(){document.querySelectorAll('.plan').forEach((card,i)=>{
+ const p=plans[i];if(!p)return;const list=tasks.filter(t=>t.planId===p.id);
+ card.querySelector('.task-preview-head span').textContent=`DO · ${list.length}개`;
+ card.querySelector('.preview-items').innerHTML=list.length?list.slice(0,4).map(t=>`<div class="preview-item ${t.done?'done':''}">${t.done?'☑':'□'} ${esc(t.title)}</div>`).join('')+(list.length>4?`<p>외 ${list.length-4}개</p>`:''):'<p>아직 등록한 할 일이 없어요.</p>';
+ });}
+$('addTaskBtn').onclick=()=>openTaskEditor();
+$('taskClose').onclick=$('taskCancel').onclick=()=>$('taskEditor').close();
+$('taskForm').addEventListener('submit',e=>{
+ e.preventDefault();const title=$('taskTitle').value.trim(),planId=$('taskPlan').value,due=$('taskDue').value,raw=$('taskMinutes').value;
+ const minutes=raw===''?null:Number(raw),priority=$('taskPriority').value,tags=[...new Set($('taskTags').value.split(',').map(s=>s.trim()).filter(Boolean))];
+ if(!plans.some(p=>p.id===planId)){$('taskError').textContent='연결할 계획을 선택해주세요.';return}
+ if(!title){$('taskError').textContent='할 일 내용을 입력해주세요.';return}
+ if(raw!==''&&(!Number.isSafeInteger(minutes)||minutes<0)){$('taskError').textContent='예상 시간은 0 이상의 정수로 입력해주세요.';return}
+ if(tags.some(t=>t.length>30)){$('taskError').textContent='태그는 각각 30자 이내로 입력해주세요.';return}
+ const next=structuredClone(tasks),now=new Date().toISOString();
+ if(editingTaskId){const t=next.find(t=>t.id===editingTaskId);if(!t)return;Object.assign(t,{planId,title,due,minutes,priority,tags,updatedAt:now});}
+ else next.push({id:crypto.randomUUID(),planId,title,due,minutes,priority,tags,done:false,createdAt:now,updatedAt:now});
+ if(saveTasks(next)){$('taskEditor').close();renderTasks();}
+});
+$('taskList').addEventListener('click',e=>{
+ const b=e.target.closest('button[data-action]');if(!b)return;const t=tasks.find(t=>t.id===b.dataset.id);if(!t)return;
+ if(b.dataset.action==='edit')openTaskEditor(t.id);
+ if(b.dataset.action==='delete'&&confirm(`「${t.title}」 할 일을 삭제할까요?`)){if(saveTasks(tasks.filter(x=>x.id!==t.id)))renderTasks();}
+});
+$('taskList').addEventListener('change',e=>{
+ const b=e.target.closest('input[data-action="toggle"]');if(!b)return;
+ const next=structuredClone(tasks),t=next.find(x=>x.id===b.dataset.id);if(!t)return;t.done=b.checked;t.completedAt=b.checked?new Date().toISOString():null;t.updatedAt=new Date().toISOString();
+ if(saveTasks(next))renderTasks();else b.checked=!b.checked;
+});
+['taskSearch','taskPlanFilter','taskStatusFilter','taskTagFilter'].forEach(id=>$(id).addEventListener(id==='taskPlanFilter'||id==='taskStatusFilter'?'change':'input',renderTasks));
+try{const saved=localStorage.getItem(SORT_KEY);if([...$('taskSort').options].some(o=>o.value===saved))$('taskSort').value=saved;}catch(e){}
+$('taskSort').addEventListener('change',()=>{try{localStorage.setItem(SORT_KEY,$('taskSort').value)}catch(e){}renderTasks()});
+renderTasks();
+
+
+// 카드 3: 계획/할 일과 분리된 실행 기록. 로컬 시제품이며 서버 DB 저장은 아직 아닙니다.
+const EXEC_KEY='plandosee-card3-executions-v1';
+const ACTIVE_KEY='plandosee-card3-active-v1';
+function readLocal(key,fallback){try{const value=JSON.parse(localStorage.getItem(key)||'null');return value??fallback}catch(e){return fallback}}
+let executions=readLocal(EXEC_KEY,[]);
+if(!Array.isArray(executions))executions=[];
+const timeText=iso=>new Date(iso).toLocaleString('ko-KR');
+const elapsedMs=(start,end)=>Math.max(0,new Date(end).getTime()-new Date(start).getTime());
+function durationText(ms){const minutes=Math.floor(ms/60000);return `${Math.floor(minutes/60)}시간 ${minutes%60}분`}
+function refreshExecutionTasks(){
+ const select=$('executionTask'),previous=select.value;
+ select.innerHTML=tasks.map(t=>`<option value="${esc(t.id)}">${esc((plans.find(p=>p.id===t.planId)?.title||'연결 계획 없음')+' / '+t.title)}</option>`).join('');
+ if(tasks.some(t=>t.id===previous))select.value=previous;
+ $('executionSave').disabled=!tasks.length;
+}
+function renderExecutions(){
+ $('executionCount').textContent=`${executions.length}건의 기록`;
+ $('executionList').innerHTML=executions.length?executions.slice().sort((a,b)=>b.endedAt.localeCompare(a.endedAt)).map(log=>{
+ const t=tasks.find(t=>t.id===log.taskId),p=plans.find(p=>p.id===log.planId);
+ return `<article class="execution-item"><strong>${esc(log.taskTitle||t?.title||'삭제된 할 일')}</strong><p>계획: ${esc(log.planTitle||p?.title||log.planId||'미정')}</p><p>시작 ${esc(timeText(log.startedAt))}</p><p>종료 ${esc(timeText(log.endedAt))}</p><p>실제 소요 ${esc(durationText(log.elapsedMs))}</p><p class="reason">막힌 이유: ${esc(log.reason||'없음')}</p></article>`;
+ }).join(''):'<div class="execution-empty">아직 실행 기록이 없어요. 실제로 한 일을 입력해 보세요.</div>';
+}
+function manualRange(){
+ const start=$('executionStartAt').value,end=$('executionEndAt').value;
+ if(!start||!end)return null;
+ const a=new Date(start),b=new Date(end);
+ if(!Number.isFinite(a.getTime())||!Number.isFinite(b.getTime())||b<=a)return null;
+ return {startedAt:a.toISOString(),endedAt:b.toISOString(),elapsedMs:b.getTime()-a.getTime()};
+}
+function updateManualDuration(){
+ const range=manualRange();
+ $('executionDuration').textContent=range?durationText(range.elapsedMs):'올바른 시작·종료 시각을 입력해 주세요';
+}
+// 날짜/시각은 UTC 문자열이 아닌 사용자의 로컬 시간으로 입력합니다.
+function localDateTimeValue(date=new Date()){
+ const pad=n=>String(n).padStart(2,'0');
+ return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+function fillCurrentExecutionTime(){
+ const now=new Date();
+ 
+ $('executionStartAt').value=localDateTimeValue(now);
+ $('executionEndAt').value=localDateTimeValue(now);
+ updateManualDuration();
+}
+$('executionNow').addEventListener('click',fillCurrentExecutionTime);
+['executionStartAt','executionEndAt'].forEach(id=>$(id).addEventListener('input',updateManualDuration));
+fillCurrentExecutionTime();
+let savingExecution=false;
+$('executionSave').addEventListener('click',()=>{
+ if(savingExecution)return;
+ const task=tasks.find(t=>t.id===$('executionTask').value),range=manualRange();
+ if(!task){$('executionError').textContent='실행한 할 일을 선택해 주세요.';return}
+ if(!range){$('executionError').textContent='종료 시각은 시작 시각보다 늦어야 해요.';return}
+ const plan=plans.find(p=>p.id===task.planId);
+ const log={id:crypto.randomUUID(),taskId:task.id,planId:task.planId,taskTitle:task.title,planTitle:plan?.title||'',...range,reason:$('executionReason').value.trim()};
+ savingExecution=true;$('executionSave').disabled=true;
+ try{
+   const next=[...executions,log];localStorage.setItem(EXEC_KEY,JSON.stringify(next));executions=next;queueRemoteSave();
+   fillCurrentExecutionTime();$('executionReason').value='';$('executionError').textContent='';
+   updateManualDuration();renderExecutions();
+ }catch(e){$('executionError').textContent='실행 기록을 저장하지 못했어요.'}
+ finally{savingExecution=false;refreshExecutionTasks()}
+});
+const executionTaskObserver=new MutationObserver(()=>refreshExecutionTasks());
+executionTaskObserver.observe($('taskList'),{childList:true});
+refreshExecutionTasks();renderExecutions();updateManualDuration();
+
+// 카드 4: 돌아보기. 브라우저 저장 시제품. 서버 DB 집계로 교체해야 합니다.
+const REFLECTION_KEY='plandosee-card4-reflections-v1';
+let reflections=readLocal(REFLECTION_KEY,[]);
+if(!Array.isArray(reflections))reflections=[];
+const dayOf=iso=>String(iso||'').slice(0,10);
+const localDay=iso=>{const d=new Date(iso);if(!Number.isFinite(d.getTime()))return '';return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
+const dayIn=(date,from,to)=>!!date&&(!from||date>=from)&&(!to||date<=to);
+const fmtMinutes=mins=>Number.isFinite(mins)?`${Math.round(mins*100)/100}분`:'미정';
+function updateReflectionOptions(){
+ for(const id of ['reflectionPlan','reflectionNextPlan']){
+  const select=$(id),prev=select.value;
+  select.innerHTML=(id==='reflectionPlan'?'<option value="all">모든 계획</option>':'<option value="">연결하지 않음</option>')+plans.map(p=>`<option value="${esc(p.id)}">${esc(p.title)} (${esc(p.id)})</option>`).join('');
+  if([...select.options].some(o=>o.value===prev))select.value=prev;
+ }
+}
+function renderReflections(){
+ updateReflectionOptions();
+ const planId=$('reflectionPlan').value,from=$('reflectionFrom').value,to=$('reflectionTo').value;
+ $('reflectionError').textContent=from&&to&&from>to?'시작 날짜는 종료 날짜보다 늦을 수 없어요.':'';
+ const selected=tasks.filter(t=>(planId==='all'||t.planId===planId)&&(!from&&!to||dayIn(t.due||localDay(t.createdAt),from,to)));
+ const ids=new Set(selected.map(t=>t.id));
+ const logs=executions.filter(l=>ids.has(l.taskId)&&(!from&&!to||dayIn(localDay(l.startedAt),from,to)));
+ const done=selected.filter(t=>t.done);
+ const today=localDay(new Date().toISOString());
+ const late=selected.filter(t=>t.due&&(t.done?(t.completedAt?localDay(t.completedAt)>t.due:false):t.due<today));
+ const blockedIds=new Set(logs.filter(l=>l.reason&&l.reason.trim()).map(l=>l.taskId));
+ const blocked=selected.filter(t=>blockedIds.has(t.id));
+ const estimated=selected.reduce((n,t)=>n+(Number.isFinite(Number(t.minutes))&&t.minutes!==null?Number(t.minutes):0),0);
+ const estimatedKnown=selected.some(t=>t.minutes!==null&&t.minutes!==''&&Number.isFinite(Number(t.minutes)));
+ const actual=logs.reduce((n,l)=>n+(Number(l.elapsedMs)||0),0)/60000;
+ $('seePlanned').textContent=selected.length;$('seeDone').textContent=done.length;
+ $('seeLate').textContent=late.length;$('seeBlocked').textContent=blocked.length;
+ $('seeEstimated').textContent=estimatedKnown?fmtMinutes(estimated):'미정';$('seeActual').textContent=fmtMinutes(actual);
+ const max=Math.max(estimated,actual,1);
+ $('seeEstimatedBar').style.width=`${estimatedKnown?estimated/max*100:0}%`;
+ $('seeActualBar').style.width=`${actual/max*100}%`;
+ $('seeDifference').textContent=estimatedKnown?`실제 기록 시간은 예상보다 ${fmtMinutes(Math.abs(actual-estimated))} ${actual>estimated?'많아요.':actual<estimated?'적어요.':'차이가 없어요.'} (실행 기록이 없는 시간은 포함되지 않음)`:'예상 시간이 입력된 할 일이 없어 비교할 수 없어요.';
+ $('seeBlockedList').innerHTML='<strong>막힌 이유가 있는 일</strong>'+(blocked.length?'<ul>'+blocked.map(t=>`<li>${esc(t.title)}: ${esc(logs.filter(l=>l.taskId===t.id&&l.reason?.trim()).map(l=>l.reason).join(' / '))}</li>`).join('')+'</ul>':'<p>기록된 막힌 이유가 없어요.</p>');
+ $('seeLateList').innerHTML='<strong>지연된 일</strong>'+(late.length?'<ul>'+late.map(t=>`<li>${esc(t.title)} · 마감 ${esc(t.due)}</li>`).join('')+'</ul>':'<p>확인된 지연 항목이 없어요.</p>');
+ $('reflectionEntries').innerHTML=reflections.length?reflections.slice().reverse().map(r=>`<div class="reflection-entry"><button type="button" class="ghost" data-delete-reflection="${esc(r.id)}">삭제</button><small>${esc(new Date(r.createdAt).toLocaleString('ko-KR'))} · ${esc(r.sourcePlanTitle||'모든 계획')} → ${esc(r.nextPlanTitle||'다음 계획 미지정')}</small><p>${esc(r.text)}</p></div>`).join(''):'<p class="helper">아직 저장된 돌아보기가 없어요.</p>';
+}
+['reflectionPlan','reflectionFrom','reflectionTo'].forEach(id=>$(id).addEventListener('change',renderReflections));
+$('reflectionReset').onclick=()=>{$('reflectionFrom').value='';$('reflectionTo').value='';renderReflections()};
+$('reflectionSave').onclick=()=>{
+ const text=$('reflectionText').value.trim(),source=$('reflectionPlan').value,next=$('reflectionNextPlan').value;
+ if(!text){$('reflectionSaveStatus').textContent='돌아보기 메모를 먼저 입력해주세요.';return}
+ if(text.length>3000){$('reflectionSaveStatus').textContent='메모는 3000자 이내로 입력해주세요.';return}
+ const entry={id:crypto.randomUUID(),text,sourcePlanId:source,sourcePlanTitle:source==='all'?'모든 계획':plans.find(p=>p.id===source)?.title||'',nextPlanId:next||null,nextPlanTitle:plans.find(p=>p.id===next)?.title||'',from:$('reflectionFrom').value,to:$('reflectionTo').value,createdAt:new Date().toISOString()};
+ try{const data=[...reflections,entry];localStorage.setItem(REFLECTION_KEY,JSON.stringify(data));reflections=data;queueRemoteSave();$('reflectionText').value='';$('reflectionSaveStatus').textContent='돌아보기를 저장했어요.';renderReflections()}
+ catch(e){$('reflectionSaveStatus').textContent='저장에 실패했어요. 브라우저 저장 공간을 확인해주세요.'}
+};
+$('reflectionEntries').addEventListener('click',e=>{const b=e.target.closest('[data-delete-reflection]');if(!b||!confirm('이 돌아보기 메모를 삭제할까요?'))return;const data=reflections.filter(r=>r.id!==b.dataset.deleteReflection);try{localStorage.setItem(REFLECTION_KEY,JSON.stringify(data));reflections=data;queueRemoteSave();renderReflections()}catch(e){$('reflectionSaveStatus').textContent='삭제 저장에 실패했어요.'}});
+const originalRenderTasks=renderTasks;
+renderTasks=function(){originalRenderTasks();renderReflections()};
+const originalRenderExecutions=renderExecutions;
+renderExecutions=function(){originalRenderExecutions();renderReflections()};
+renderReflections();
+
+
+// 카드 5: JSON 내보내기 및 서버 DB 동기화.
+// 서버 저장은 /api/state에서 Supabase 서비스 키로만 수행하며 브라우저에는 키를 전달하지 않습니다.
+let remoteReady=false,remoteMode=false,remoteBusy=false,remotePending=false;
+const cloudStatus=$('cloudStatus');
+function fullData(){return {schemaVersion:2,exportedAt:new Date().toISOString(),plans:structuredClone(plans),tasks:structuredClone(tasks),executions:structuredClone(executions),reflections:structuredClone(reflections)};}
+function setCloudStatus(message){cloudStatus.textContent=message;const error=$('cloudError');const failed=message.includes('실패')||message.includes('미연결');error.hidden=!failed;error.textContent=failed?'서버에 저장되지 않았어요. 현재 기록은 이 브라우저에만 보관됩니다.':'';}
+let remoteTimer;
+function queueRemoteSave(){
+ if(!remoteReady||!remoteMode)return;
+ clearTimeout(remoteTimer);remoteTimer=setTimeout(saveRemote,350);
+}
+async function saveRemote(){
+ if(!remoteMode)return;
+ if(remoteBusy){remotePending=true;return;}
+ remoteBusy=true;setCloudStatus('서버에 저장하는 중…');
+ try{
+  const response=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fullData()),cache:'no-store'});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  setCloudStatus('서버 DB 저장 완료 · 새로고침해도 유지돼요.');
+ }catch(error){setCloudStatus('서버 저장 실패 · 이 브라우저에만 보관 중이에요. 다시 시도해 주세요.');}
+ finally{remoteBusy=false;if(remotePending){remotePending=false;queueRemoteSave();}}
+}
+async function initRemote(){
+ try{
+  const response=await fetch('/api/state',{cache:'no-store'});
+  if(!response.ok)throw Error('HTTP '+response.status);
+  const result=await response.json();remoteMode=true;
+  if(result.state){
+   const state=result.state;
+   if(!['plans','tasks','executions','reflections'].every(k=>Array.isArray(state[k])))throw Error('Invalid data');
+   // DB 데이터가 정본. 기존 브라우저 데이터는 서버 데이터로 교체합니다.
+   localStorage.setItem(KEY,JSON.stringify(state.plans));localStorage.setItem(TASK_KEY,JSON.stringify(state.tasks));
+   localStorage.setItem(EXEC_KEY,JSON.stringify(state.executions));localStorage.setItem(REFLECTION_KEY,JSON.stringify(state.reflections));
+   plans=state.plans;tasks=state.tasks;executions=state.executions;reflections=state.reflections;
+   render();renderTasks();refreshPlanOptions();refreshExecutionTasks();renderExecutions();renderReflections();
+   setCloudStatus('서버 DB에서 데이터를 불러왔어요.');
+  }else{
+   setCloudStatus('서버 DB 연결 완료 · 현재 브라우저 기록을 처음 저장합니다.');
+   remoteReady=true;await saveRemote();
+  }
+  remoteReady=true;
+ }catch(error){remoteMode=false;remoteReady=true;setCloudStatus('서버 DB 미연결 · 현재는 이 브라우저에만 저장돼요.');}
+}
+$('exportAll').addEventListener('click',()=>{
+ const json=JSON.stringify(fullData(),null,2);
+ const blob=new Blob([json],{type:'application/json;charset=utf-8'});
+ const url=URL.createObjectURL(blob),link=document.createElement('a');
+ link.href=url;link.download='plandosee-all-data-'+localDateTimeValue().slice(0,10)+'.json';
+ document.body.appendChild(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+ $('exportStatus').textContent='계획·할 일·실행 기록·돌아보기를 JSON 파일 하나로 내보냈어요.';
+});
+
+function renderCard5Counts(){
+ $('card5PlanCount').textContent=plans.length;
+ $('card5TaskCount').textContent=tasks.length;
+ $('card5ExecutionCount').textContent=executions.length;
+ $('card5ReflectionCount').textContent=reflections.length;
+ $('card5ActualStatus').textContent=executions.length>=3?'실행 기록 3건 이상 등록됨':'실제 실행 기록을 '+(3-executions.length)+'건 더 입력해야 해요.';
+}
+const card5OriginalRender=render;
+render=function(){card5OriginalRender();renderCard5Counts();};
+const card5OriginalTasks=renderTasks;
+renderTasks=function(){card5OriginalTasks();renderCard5Counts();};
+const card5OriginalExec=renderExecutions;
+renderExecutions=function(){card5OriginalExec();renderCard5Counts();};
+renderCard5Counts();initRemote();
