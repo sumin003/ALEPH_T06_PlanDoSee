@@ -13,6 +13,8 @@ module.exports=async function handler(req,res){
   }
   const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
   if(!body||!['plans','tasks','executions','reflections'].every(k=>Array.isArray(body[k])))return res.status(400).json({error:'invalid_data'});
+  const completionIds=body.executions.filter(x=>x.isCompletion).map(x=>x.taskId);
+  if(new Set(completionIds).size!==completionIds.length)return res.status(409).json({error:'duplicate_completion'});
   if(JSON.stringify(body).length>1500000)return res.status(413).json({error:'data_too_large'});
   const r=await fetch(`${URL}/rest/v1/pds_state?on_conflict=id`,{method:'POST',headers:{...headers(),'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:'main',data:body,updated_at:new Date().toISOString()})});
   if(!r.ok)throw Error(`DB ${r.status}`);return res.status(200).json({ok:true});
