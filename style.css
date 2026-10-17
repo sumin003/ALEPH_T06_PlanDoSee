@@ -15,3 +15,10 @@
 .card5-section{margin-top:52px;scroll-margin-top:24px}.card5-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0}.card5-stats>div,.card5-panel{background:#fff;border:1px solid #dbe8f4;border-radius:16px;padding:20px;box-shadow:0 6px 18px rgba(71,113,150,.06)}.card5-stats span{display:block;font-size:13px;color:#68809c}.card5-stats strong{font-size:26px;color:#365d86}.card5-panel{margin:14px 0}.card5-panel h3{margin:0 0 12px}.card5-panel p{line-height:1.7}@media(max-width:650px){.card5-stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .public-hint{margin:18px 0 0;font-size:12px;color:#6486a2;line-height:1.7}.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.cloud-error{margin:12px 0;color:#a34255;font-size:13px}.cloud-error[hidden]{display:none}
+
+/* 날짜 이동 컨트롤: 입력창과 버튼의 하단 기준선을 통일 */
+.day-nav{display:flex;align-items:flex-end;gap:10px;flex-wrap:wrap;margin-top:25px}
+.day-nav label{display:flex;flex-direction:column;gap:7px;margin:0;font-size:12px;line-height:1.3}
+.day-nav input[type="date"]{width:170px;min-height:44px;padding:10px 12px}
+.day-nav button{height:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
+@media(max-width:500px){.day-nav{gap:8px}.day-nav input[type="date"]{width:155px}.day-nav button{padding:10px 12px}}
