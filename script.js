@@ -224,7 +224,7 @@ function renderExecutions(){
  $('executionCount').textContent=`${executions.length}건의 기록`;
  $('executionList').innerHTML=executions.length?executions.slice().sort((a,b)=>b.endedAt.localeCompare(a.endedAt)).map(log=>{
  const t=tasks.find(t=>t.id===log.taskId),p=plans.find(p=>p.id===log.planId);
- return `<article class="execution-item"><strong>${esc(log.taskTitle||t?.title||'삭제된 할 일')}</strong><p>계획: ${esc(log.planTitle||p?.title||log.planId||'미정')}</p><p>시작 ${esc(timeText(log.startedAt))}</p><p>종료 ${esc(timeText(log.endedAt))}</p><p>실제 소요 ${esc(durationText(log.elapsedMs))}</p><p class="reason">막힌 이유: ${esc(log.reason||'없음')}</p></article>`;
+ return `<article class="execution-item"><strong>${esc(log.taskTitle||t?.title||'삭제된 할 일')}</strong><p>계획: ${esc(log.planTitle||p?.title||log.planId||'미정')}</p><p>시작 ${esc(timeText(log.startedAt))}</p><p>종료 ${esc(timeText(log.endedAt))}</p><p>실제 소요 ${esc(durationText(log.elapsedMs))}</p><p class="reason">막힌 이유: ${esc(log.reason||'없음')}</p><button type="button" class="secondary" data-edit-execution="${esc(log.id)}">수정</button></article>`;
  }).join(''):'<div class="execution-empty">아직 실행 기록이 없어요. 실제로 한 일을 입력해 보세요.</div>';
 }
 function manualRange(){
@@ -253,6 +253,20 @@ function fillCurrentExecutionTime(){
 $('executionNow').addEventListener('click',fillCurrentExecutionTime);
 ['executionStartAt','executionEndAt'].forEach(id=>$(id).addEventListener('input',updateManualDuration));
 fillCurrentExecutionTime();
+let editingExecutionId=null;
+$('executionList').addEventListener('click',e=>{
+ const button=e.target.closest('button[data-edit-execution]');if(!button)return;
+ const log=executions.find(x=>x.id===button.dataset.editExecution);if(!log)return;
+ editingExecutionId=log.id;
+ $('executionTask').value=log.taskId;
+ $('executionStartAt').value=localDateTimeValue(new Date(log.startedAt));
+ $('executionEndAt').value=localDateTimeValue(new Date(log.endedAt));
+ $('executionReason').value=log.reason||'';
+ $('executionSave').textContent='수정 저장';
+ $('executionError').textContent='';
+ updateManualDuration();
+ $('executionStartAt').focus();
+});
 let savingExecution=false;
 $('executionSave').addEventListener('click',()=>{
  if(savingExecution)return;
@@ -260,10 +274,20 @@ $('executionSave').addEventListener('click',()=>{
  if(!task){$('executionError').textContent='실행한 할 일을 선택해 주세요.';return}
  if(!range){$('executionError').textContent='종료 시각은 시작 시각보다 늦어야 해요.';return}
  const plan=plans.find(p=>p.id===task.planId);
- const log={id:crypto.randomUUID(),taskId:task.id,planId:task.planId,taskTitle:task.title,planTitle:plan?.title||'',...range,reason:$('executionReason').value.trim()};
+ const log={id:editingExecutionId||crypto.randomUUID(),taskId:task.id,planId:task.planId,taskTitle:task.title,planTitle:plan?.title||'',...range,reason:$('executionReason').value.trim()};
  savingExecution=true;$('executionSave').disabled=true;
  try{
-   const next=[...executions,log];localStorage.setItem(EXEC_KEY,JSON.stringify(next));executions=next;queueRemoteSave();
+   const next=editingExecutionId?executions.map(x=>x.id===editingExecutionId?{...x,...log}:x):[...executions,log];
+   localStorage.setItem(EXEC_KEY,JSON.stringify(next));executions=next;
+   if(editingExecutionId){
+    const changed=next.find(x=>x.id===editingExecutionId);
+    if(changed?.isCompletion){
+     const nextTasks=structuredClone(tasks),linked=nextTasks.find(x=>x.id===changed.taskId);
+     if(linked&&linked.done){linked.completedAt=changed.endedAt;linked.updatedAt=new Date().toISOString();localStorage.setItem(TASK_KEY,JSON.stringify(nextTasks));tasks=nextTasks;}
+    }
+   }
+   editingExecutionId=null;$('executionSave').textContent='실행 기록 저장';
+   queueRemoteSave();
    fillCurrentExecutionTime();$('executionReason').value='';$('executionError').textContent='';
    updateManualDuration();renderExecutions();
  }catch(e){$('executionError').textContent='실행 기록을 저장하지 못했어요.'}
