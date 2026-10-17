@@ -13,8 +13,7 @@ module.exports=async function handler(req,res){
   }
   const body=typeof req.body==='string'?JSON.parse(req.body):req.body;
   if(!body||!['plans','tasks','executions','reflections'].every(k=>Array.isArray(body[k])))return res.status(400).json({error:'invalid_data'});
-  const repeatById=new Map(body.tasks.map(t=>[t.id,t.repeat==='daily'?'daily':'once']));
-  const completionIds=body.executions.filter(x=>x.isCompletion).map(x=>repeatById.get(x.taskId)==='daily'?`${x.taskId}:${new Date(x.endedAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})}`:x.taskId);
+  const completionIds=body.executions.filter(x=>x.isCompletion).map(x=>`${x.taskId}:${new Date(x.endedAt).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'})}`);
   if(new Set(completionIds).size!==completionIds.length)return res.status(409).json({error:'duplicate_completion'});
   if(JSON.stringify(body).length>1500000)return res.status(413).json({error:'data_too_large'});
   const r=await fetch(`${URL}/rest/v1/pds_state?on_conflict=id`,{method:'POST',headers:{...headers(),'Prefer':'resolution=merge-duplicates,return=minimal'},body:JSON.stringify({id:'main',data:body,updated_at:new Date().toISOString()})});
