@@ -19,8 +19,8 @@
     "createdAtUpdatedAt": "ISO 8601 UTC",
     "taskDay": "YYYY-MM-DD browser-local calendar date, defaults to selected day",
     "dailyView": "selectedDay defaults to current browser-local date; plan period includes selectedDay; tasks filtered by day",
-    "comparison": "For selected tasks, estimated is sum of task.minutes (missing=0); actual is sum of linked execution elapsedMs / 60000; difference is actual minus estimated.",
-    "overdue": "A task is overdue only if incomplete and due is before today's date in Asia/Seoul."
+    "comparison": "Default SEE includes all tasks in selected plan and their linked executions. Optional from/to dates filter task day and execution start date separately. Estimated and actual are sums in minutes; missing estimates count as zero. Difference = actual - estimated.",
+    "overdue": "Asia/Seoul calendar date; only unfinished tasks with due date before today are overdue."
   },
   "document": {
     "schemaVersion": "integer 2",
