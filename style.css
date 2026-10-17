@@ -22,3 +22,17 @@
 .day-nav input[type="date"]{width:170px;min-height:44px;padding:10px 12px}
 .day-nav button{height:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center;white-space:nowrap}
 @media(max-width:500px){.day-nav{gap:8px}.day-nav input[type="date"]{width:155px}.day-nav button{padding:10px 12px}}
+
+/* T06: 상단 Home / Plan / Do / See 탐색 */
+html{scroll-behavior:smooth;scroll-padding-top:92px}
+.app{display:block;min-height:100vh}
+.app>main{max-width:1180px;width:100%;margin:0 auto;padding:20px 48px 70px}
+.top{position:sticky;top:0;z-index:20;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;background:rgba(245,251,255,.96);border:1px solid #d5eaf8;border-radius:18px;padding:14px 20px;box-shadow:0 6px 18px rgba(71,113,150,.08);backdrop-filter:blur(10px)}
+.top-brand{font-size:21px;font-weight:800;color:#346d99;text-decoration:none;white-space:nowrap}
+.top-brand span{color:#70b4d7}
+.top-navigation{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.top-navigation a{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:9px 16px;border-radius:12px;color:#527b9a;text-decoration:none;font-size:14px;font-weight:700}
+.top-navigation a:hover,.top-navigation a:focus-visible{background:#d9efff;color:#28668f}
+#home,#planSection,#tasksSection,#reflectionSection{scroll-margin-top:100px}
+@media(max-width:650px){.app>main{padding:12px 16px 48px}.top{gap:8px;padding:12px}.top-brand{font-size:18px}.top-navigation{width:100%;justify-content:space-between;gap:2px}.top-navigation a{padding:8px 10px;font-size:13px;flex:1}.hero{margin-top:18px}}
+@media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
