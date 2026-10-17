@@ -17,63 +17,19 @@ $('todayDay').onclick=()=>changeDay(dateLocal());
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const emptyText=s=>s?esc(s):'<span class="unset">아직 정하지 않았어요</span>';
 const snapshot=p=>({title:p.title,start:p.start,end:p.end,success:p.success,minutes:p.minutes});
-function load(){try{const raw=localStorage.getItem(KEY);if(raw){const value=JSON.parse(raw);if(Array.isArray(value))return value;}}catch(e){console.warn('저장된 계획을 불러오지 못했습니다.',e)}return initialTitles.map((title,i)=>({id:`initial-${i+1}`,title,start:'',end:'',success:'',minutes:null,revisions:[],createdAt:new Date().toISOString()}));}
+function load(){return []}
 let plans=load(),editingId=null;
 // 기존 카드 1 데이터를 보존하면서 안정적인 계획 ID를 부여합니다.
 const usedIds=new Set();let migrated=false;
 plans.forEach((p,i)=>{let id=p.id;if(/^initial-\d+$/.test(id||'')){id=`PLAN-${String(Number(id.split('-')[1])).padStart(3,'0')}`;}if(!id||usedIds.has(id)){let n=1;while(usedIds.has(`PLAN-${String(n).padStart(3,'0')}`))n++;id=`PLAN-${String(n).padStart(3,'0')}`;}if(p.id!==id){p.id=id;migrated=true;}usedIds.add(id);});
 let tasks=[];
-try{const raw=JSON.parse(localStorage.getItem(TASK_KEY)||'[]');tasks=Array.isArray(raw)?raw:[]}catch(e){console.warn('할 일 데이터를 읽지 못했습니다.',e)}
-// 사용자가 지정한 최초 할 일 5개를 한 번만 등록합니다. 기존 할 일은 삭제하거나 덮어쓰지 않습니다.
-const SEED_KEY='plandosee-task-seed-20261018-v1';
-const initialTasksByPlan={
- '정보처리기사 실기 공부하기':['이론','코딩','기출문제'],
- 'ALEPH 과제 하기':['ALEPH_T06 과제하기'],
- 'ALEPH 수업 복습하기':['필기 정리하기']
-};
-try {
- if(localStorage.getItem(SEED_KEY)!=='done') {
-  const now=new Date().toISOString();
-  const additions=[];
-  for(const [planTitle,titles] of Object.entries(initialTasksByPlan)) {
-   const plan=plans.find(p=>p.title===planTitle);
-   if(!plan)continue;
-   for(const title of titles) {
-    if(tasks.some(t=>t.planId===plan.id&&t.title===title))continue;
-    additions.push({id:crypto.randomUUID(),planId:plan.id,title,due:'',minutes:null,priority:'normal',tags:[],done:false,createdAt:now,updatedAt:now});
-   }
-  }
-  if(!additions.length||saveTasks([...tasks,...additions]))localStorage.setItem(SEED_KEY,'done');
- }
-}catch(e){console.warn('초기 할 일 저장을 완료하지 못했습니다.',e)}
-
-// 사용자가 새로 요청한 할 일 3개만 추가합니다. 이전 데이터와 완료 상태는 보존합니다.
-const EXTRA_SEED_KEY='plandosee-task-seed-extra-20261018-v1';
-const extraTasksByPlan={
- 'ALEPH 과제 하기':['방어전 정리하기'],
- 'ALEPH 수업 복습하기':['실습 내용 정리하기','수업 내용 복습하기']
-};
-try {
- if(localStorage.getItem(EXTRA_SEED_KEY)!=='done'){
-  const now=new Date().toISOString(), additions=[];
-  for(const [planTitle,titles] of Object.entries(extraTasksByPlan)){
-   const plan=plans.find(p=>p.title===planTitle);
-   if(!plan)continue;
-   for(const title of titles){
-    if(tasks.some(t=>t.planId===plan.id&&t.title===title))continue;
-    additions.push({id:crypto.randomUUID(),planId:plan.id,title,due:'',minutes:null,priority:'normal',tags:[],done:false,createdAt:now,updatedAt:now});
-   }
-  }
-  if(!additions.length||saveTasks([...tasks,...additions]))localStorage.setItem(EXTRA_SEED_KEY,'done');
- }
-}catch(e){console.warn('추가 할 일 저장을 완료하지 못했습니다.',e)}
 
 // 이후 계획이 추가되어도 기존 ID와 충돌하지 않도록 사용된 번호를 확인합니다.
 function nextPlanId(){let n=1;while(plans.some(p=>p.id===`PLAN-${String(n).padStart(3,'0')}`))n++;return `PLAN-${String(n).padStart(3,'0')}`}
-function saveTasks(next){try{localStorage.setItem(TASK_KEY,JSON.stringify(next));tasks=next;if(typeof remoteReady!=='undefined')queueRemoteSave();return true}catch(e){alert('할 일을 저장하지 못했어요. 브라우저 저장 공간을 확인해주세요.');return false}}
-if(migrated)persist();
+function saveTasks(next){if(!remoteReady||!remoteMode)return false;tasks=next;queueRemoteSave();return true}
 
-function persist(){try{localStorage.setItem(KEY,JSON.stringify(plans));queueRemoteSave();return true}catch(e){alert('브라우저 저장에 실패했습니다. 저장 공간 또는 브라우저 설정을 확인해주세요.');return false}}
+
+function persist(){if(!remoteReady||!remoteMode)return false;queueRemoteSave();return true}
 function render(){
   $('count').textContent=`${plans.filter(planVisible).length}개의 계획`;
   $('cards').innerHTML=plans.some(planVisible)?plans.filter(planVisible).map((p,i)=>{
@@ -193,22 +149,22 @@ $('completionForm').addEventListener('submit',e=>{
  const nextTasks=structuredClone(tasks),updated=nextTasks.find(t=>t.id===task.id);
  updated.done=true;updated.completedAt=range.endedAt;updated.updatedAt=now;
  try{
-  localStorage.setItem(EXEC_KEY,JSON.stringify(nextLogs));
-  localStorage.setItem(TASK_KEY,JSON.stringify(nextTasks));
+  if(!remoteReady||!remoteMode)throw Error('server_unavailable');
+
   executions=nextLogs;tasks=nextTasks;queueRemoteSave();
   $('completionDialog').close();render();renderTasks();renderExecutions();renderReflections();
  }catch(error){$('completeError').textContent='기록을 저장하지 못했어요.';}
 });
 ['taskSearch','taskPlanFilter','taskStatusFilter','taskTagFilter'].forEach(id=>$(id).addEventListener(id==='taskPlanFilter'||id==='taskStatusFilter'?'change':'input',renderTasks));
-try{const saved=localStorage.getItem(SORT_KEY);if([...$('taskSort').options].some(o=>o.value===saved))$('taskSort').value=saved;}catch(e){}
-$('taskSort').addEventListener('change',()=>{try{localStorage.setItem(SORT_KEY,$('taskSort').value)}catch(e){}renderTasks()});
+
+$('taskSort').addEventListener('change',renderTasks);
 renderTasks();
 
 
 // 카드 3: 계획/할 일과 분리된 실행 기록. 로컬 시제품이며 서버 DB 저장은 아직 아닙니다.
 const EXEC_KEY='plandosee-card3-executions-v1';
 const ACTIVE_KEY='plandosee-card3-active-v1';
-function readLocal(key,fallback){try{const value=JSON.parse(localStorage.getItem(key)||'null');return value??fallback}catch(e){return fallback}}
+function readLocal(key,fallback){return fallback}
 let executions=readLocal(EXEC_KEY,[]);
 if(!Array.isArray(executions))executions=[];
 const timeText=iso=>new Date(iso).toLocaleString('ko-KR');
@@ -278,12 +234,12 @@ $('executionSave').addEventListener('click',()=>{
  savingExecution=true;$('executionSave').disabled=true;
  try{
    const next=editingExecutionId?executions.map(x=>x.id===editingExecutionId?{...x,...log}:x):[...executions,log];
-   localStorage.setItem(EXEC_KEY,JSON.stringify(next));executions=next;
+   if(!remoteReady||!remoteMode)throw Error('server_unavailable');executions=next;
    if(editingExecutionId){
     const changed=next.find(x=>x.id===editingExecutionId);
     if(changed?.isCompletion){
      const nextTasks=structuredClone(tasks),linked=nextTasks.find(x=>x.id===changed.taskId);
-     if(linked&&linked.done){linked.completedAt=changed.endedAt;linked.updatedAt=new Date().toISOString();localStorage.setItem(TASK_KEY,JSON.stringify(nextTasks));tasks=nextTasks;}
+     if(linked&&linked.done){linked.completedAt=changed.endedAt;linked.updatedAt=new Date().toISOString();tasks=nextTasks;}
     }
    }
    editingExecutionId=null;$('executionSave').textContent='실행 기록 저장';
@@ -346,10 +302,10 @@ $('reflectionSave').onclick=()=>{
  if(!text){$('reflectionSaveStatus').textContent='돌아보기 메모를 먼저 입력해주세요.';return}
  if(text.length>3000){$('reflectionSaveStatus').textContent='메모는 3000자 이내로 입력해주세요.';return}
  const entry={id:crypto.randomUUID(),text,sourcePlanId:source,sourcePlanTitle:source==='all'?'모든 계획':plans.find(p=>p.id===source)?.title||'',nextPlanId:next||null,nextPlanTitle:plans.find(p=>p.id===next)?.title||'',from:$('reflectionFrom').value,to:$('reflectionTo').value,createdAt:new Date().toISOString()};
- try{const data=[...reflections,entry];localStorage.setItem(REFLECTION_KEY,JSON.stringify(data));reflections=data;queueRemoteSave();$('reflectionText').value='';$('reflectionSaveStatus').textContent='돌아보기를 저장했어요.';renderReflections()}
+ try{const data=[...reflections,entry];if(!remoteReady||!remoteMode)throw Error('server_unavailable');reflections=data;queueRemoteSave();$('reflectionText').value='';$('reflectionSaveStatus').textContent='서버에 저장하는 중…';renderReflections()}
  catch(e){$('reflectionSaveStatus').textContent='저장에 실패했어요. 브라우저 저장 공간을 확인해주세요.'}
 };
-$('reflectionEntries').addEventListener('click',e=>{const b=e.target.closest('[data-delete-reflection]');if(!b||!confirm('이 돌아보기 메모를 삭제할까요?'))return;const data=reflections.filter(r=>r.id!==b.dataset.deleteReflection);try{localStorage.setItem(REFLECTION_KEY,JSON.stringify(data));reflections=data;queueRemoteSave();renderReflections()}catch(e){$('reflectionSaveStatus').textContent='삭제 저장에 실패했어요.'}});
+$('reflectionEntries').addEventListener('click',e=>{const b=e.target.closest('[data-delete-reflection]');if(!b||!confirm('이 돌아보기 메모를 삭제할까요?'))return;const data=reflections.filter(r=>r.id!==b.dataset.deleteReflection);try{if(!remoteReady||!remoteMode)throw Error('server_unavailable');reflections=data;queueRemoteSave();renderReflections()}catch(e){$('reflectionSaveStatus').textContent='삭제 저장에 실패했어요.'}});
 const originalRenderTasks=renderTasks;
 renderTasks=function(){originalRenderTasks();renderReflections()};
 const originalRenderExecutions=renderExecutions;
@@ -361,44 +317,46 @@ renderReflections();
 // 서버 저장은 /api/state에서 Supabase 서비스 키로만 수행하며 브라우저에는 키를 전달하지 않습니다.
 let remoteReady=false,remoteMode=false,remoteBusy=false,remotePending=false;
 const cloudStatus=$('cloudStatus');
+cloudStatus.classList.remove('visually-hidden');
+cloudStatus.style.cssText='display:block;margin:12px 0;font-size:13px;color:#356d94';
 function fullData(){return {schemaVersion:2,exportedAt:new Date().toISOString(),plans:structuredClone(plans),tasks:structuredClone(tasks),executions:structuredClone(executions),reflections:structuredClone(reflections)};}
 function setCloudStatus(message){cloudStatus.textContent=message;const error=$('cloudError');error.hidden=true;error.textContent='';}
-let remoteTimer;
-function queueRemoteSave(){
- if(!remoteReady||!remoteMode)return;
- clearTimeout(remoteTimer);remoteTimer=setTimeout(saveRemote,350);
-}
+function lockEditing(locked){document.querySelectorAll('button,input,textarea,select').forEach(el=>{if(['exportAll','selectedDay','prevDay','nextDay','todayDay'].includes(el.id))return;if(locked){if(!el.disabled)el.dataset.dbLock='1';el.disabled=true;}else if(el.dataset.dbLock==='1'){el.disabled=false;delete el.dataset.dbLock;}});}
+let remoteTimer,confirmedState=null;
+function applyState(state){plans=structuredClone(state.plans);tasks=structuredClone(state.tasks);executions=structuredClone(state.executions);reflections=structuredClone(state.reflections);render();renderTasks();refreshPlanOptions();refreshExecutionTasks();renderExecutions();renderReflections();}
+function queueRemoteSave(){if(!remoteReady||!remoteMode)return;clearTimeout(remoteTimer);remoteTimer=setTimeout(saveRemote,350);}
 async function saveRemote(){
  if(!remoteMode)return;
  if(remoteBusy){remotePending=true;return;}
- remoteBusy=true;setCloudStatus('서버에 저장하는 중…');
+ remoteBusy=true;lockEditing(true);setCloudStatus('서버 DB에 저장 중…');
+ const payload=fullData();
  try{
-  const response=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(fullData()),cache:'no-store'});
+  const response=await fetch('/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),cache:'no-store'});
   if(!response.ok)throw Error('HTTP '+response.status);
-  setCloudStatus('서버 DB 저장 완료 · 새로고침해도 유지돼요.');
- }catch(error){setCloudStatus('서버 저장 실패 · 이 브라우저에만 보관 중이에요. 다시 시도해 주세요.');}
- finally{remoteBusy=false;if(remotePending){remotePending=false;queueRemoteSave();}}
+  confirmedState=payload;setCloudStatus('서버 DB 저장 완료 · 다른 창에서도 확인할 수 있어요.');
+  $('reflectionSaveStatus').textContent='서버 DB 저장 완료';
+ }catch(error){
+  if(confirmedState)applyState(confirmedState);
+  setCloudStatus('서버 저장 실패 · 변경 사항을 되돌렸어요.');
+  $('reflectionSaveStatus').textContent='서버 저장 실패';
+  remotePending=false;remoteMode=false;remoteReady=false;
+ }finally{remoteBusy=false;if(remoteMode)lockEditing(false);if(remotePending&&remoteMode){remotePending=false;queueRemoteSave();}}
 }
 async function initRemote(){
+ lockEditing(true);setCloudStatus('서버 DB에서 불러오는 중…');
  try{
   const response=await fetch('/api/state',{cache:'no-store'});
   if(!response.ok)throw Error('HTTP '+response.status);
-  const result=await response.json();remoteMode=true;
-  if(result.state){
-   const state=result.state;
-   if(!['plans','tasks','executions','reflections'].every(k=>Array.isArray(state[k])))throw Error('Invalid data');
-   // DB 데이터가 정본. 기존 브라우저 데이터는 서버 데이터로 교체합니다.
-   localStorage.setItem(KEY,JSON.stringify(state.plans));localStorage.setItem(TASK_KEY,JSON.stringify(state.tasks));
-   localStorage.setItem(EXEC_KEY,JSON.stringify(state.executions));localStorage.setItem(REFLECTION_KEY,JSON.stringify(state.reflections));
-   plans=state.plans;tasks=state.tasks;executions=state.executions;reflections=state.reflections;
-   render();renderTasks();refreshPlanOptions();refreshExecutionTasks();renderExecutions();renderReflections();
-   setCloudStatus('서버 DB에서 데이터를 불러왔어요.');
-  }else{
-   setCloudStatus('서버 DB 연결 완료 · 현재 브라우저 기록을 처음 저장합니다.');
-   remoteReady=true;await saveRemote();
-  }
-  remoteReady=true;
- }catch(error){remoteMode=false;remoteReady=true;setCloudStatus('서버 DB 미연결 · 현재는 이 브라우저에만 저장돼요.');}
+  const result=await response.json();
+  if(!result.state||!['plans','tasks','executions','reflections'].every(k=>Array.isArray(result.state[k])))throw Error('Server data missing or invalid');
+  applyState(result.state);
+  confirmedState=fullData();
+  remoteMode=true;remoteReady=true;
+  lockEditing(false);setCloudStatus('서버 DB에서 기록을 불러왔어요.');
+ }catch(error){
+  remoteMode=false;remoteReady=false;lockEditing(true);
+  setCloudStatus('서버 DB 연결 실패 · 기존 기록 보호를 위해 수정할 수 없어요.');
+ }
 }
 $('exportAll').addEventListener('click',()=>{
  const json=JSON.stringify(fullData(),null,2);
