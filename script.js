@@ -264,7 +264,7 @@ const fmtMinutes=mins=>{if(!Number.isFinite(mins))return '0분';const rounded=Ma
 function updateReflectionOptions(){
  for(const id of ['reflectionPlan','reflectionNextPlan']){
   const select=$(id),prev=select.value;
-  select.innerHTML=(id==='reflectionPlan'?'<option value="all">모든 계획</option>':'<option value="">연결하지 않음</option>')+plans.map(p=>`<option value="${esc(p.id)}">${esc(p.title)} (${esc(p.id)})</option>`).join('');
+  select.innerHTML=(id==='reflectionPlan'?'<option value="all">모든 계획</option>':'<option value="">선택하지 않음</option>')+plans.map(p=>`<option value="${esc(p.id)}">${esc(p.title)} (${esc(p.id)})</option>`).join('');
   if([...select.options].some(o=>o.value===prev))select.value=prev;
  }
 }
@@ -292,7 +292,8 @@ function renderReflections(){
  $('seeBlockedList').innerHTML='<strong>막힌 이유가 있는 일</strong>'+(blocked.length?'<ul>'+blocked.map(t=>`<li>${esc(t.title)}: ${esc(logs.filter(l=>l.taskId===t.id&&l.reason?.trim()).map(l=>l.reason).join(' / '))}</li>`).join('')+'</ul>':'<p>기록된 막힌 이유가 없어요.</p>');
  $('seeLateList').innerHTML='<strong>지연된 일</strong>'+(late.length?'<ul>'+late.map(t=>`<li>${esc(t.title)} · 마감 ${esc(t.due)}</li>`).join('')+'</ul>':'<p>확인된 지연 항목이 없어요.</p>');
  $('seeEvidencePanel').hidden=true;
- $('reflectionEntries').innerHTML=reflections.length?reflections.slice().reverse().map(r=>`<div class="reflection-entry"><button type="button" class="ghost" data-delete-reflection="${esc(r.id)}">삭제</button><small>${esc(new Date(r.createdAt).toLocaleString('ko-KR'))} · ${esc(r.sourcePlanTitle||'모든 계획')} → ${esc(r.nextPlanTitle||'다음 계획 미지정')}</small><p>${esc(r.text)}</p>${r.nextPlanId?`<p class="helper">다음 계획으로 넘긴 개선 메모: <strong>${esc(r.text)}</strong></p>`:''}</div>`).join(''):'<p class="helper">아직 저장된 돌아보기가 없어요.</p>';
+ const visibleReflections=reflections.filter(r=>($('reflectionNextPlan').value||'')===(r.nextPlanId||''));
+ $('reflectionEntries').innerHTML=visibleReflections.length?visibleReflections.slice().reverse().map(r=>`<div class="reflection-entry"><button type="button" class="ghost" data-delete-reflection="${esc(r.id)}">삭제</button><small>${esc(new Date(r.createdAt).toLocaleString('ko-KR'))} · ${esc(r.sourcePlanTitle||'모든 계획')} → ${esc(r.nextPlanTitle||'다음 계획 미지정')}</small><p>${esc(r.text)}</p>${r.nextPlanId?`<p class="helper">다음 계획으로 넘긴 개선 메모: <strong>${esc(r.text)}</strong></p>`:''}</div>`).join(''):'<p class="helper">아직 저장된 돌아보기가 없어요.</p>';
 }
 const evidenceNames={seePlanned:'계획에 딸린 할 일',seeDone:'완료한 일',seeLate:'지연된 일',seeBlocked:'막힌 일',seeEstimated:'예상 시간',seeActual:'실제 시간'};
 document.querySelectorAll('[data-see-detail]').forEach(b=>b.addEventListener('click',()=>{
