@@ -9,7 +9,8 @@ const dateLocal=(d=new Date())=>`${d.getFullYear()}-${String(d.getMonth()+1).pad
 let selectedDay=dateLocal();
 const seoulDay=iso=>new Date(iso).toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
 function dailyCompletion(t,day=selectedDay){return executions.find(l=>l.taskId===t.id&&l.isCompletion&&seoulDay(l.endedAt)===day)}
-function taskDone(t,day=selectedDay){return t.repeat==='daily'?Boolean(dailyCompletion(t,day)):Boolean(t.done)}
+function taskDone(t,day=selectedDay){return taskInPeriod(t,day)&&Boolean(dailyCompletion(t,day))}
+function taskInPeriod(t,day=selectedDay){return (!t.day||t.day<=day)&&(!t.due||day<=t.due)}
 function taskDay(t){return t.day||t.due||dateLocal(new Date(t.createdAt||Date.now()));}
 function planVisible(p){return (!p.start||p.start<=selectedDay)&&(!p.end||p.end>=selectedDay);}
 function changeDay(day){selectedDay=day;$('selectedDay').value=day;render();renderTasks();renderReflections();}
@@ -69,7 +70,7 @@ function openTaskEditor(id=null,planId=null){
  $('taskDialogTitle').textContent=t?'할 일 수정':'새 할 일';$('taskForm').reset();$('taskError').textContent='';
  $('taskPlan').value=t?.planId||planId||plans[0]?.id||'';
  $('taskTitle').value=t?.title||'';$('taskDay').value=t?taskDay(t):selectedDay;$('taskDue').value=t?.due||'';$('taskHours').value=t?.minutes==null?'':Math.floor(t.minutes/60);$('taskMinutes').value=t?.minutes==null?'':t.minutes%60;
- $('taskRepeat').value=t?.repeat||'once';$('taskPriority').value=t?.priority||'normal';$('taskTags').value=(t?.tags||[]).join(', ');
+ $('taskPriority').value=t?.priority||'normal';$('taskTags').value=(t?.tags||[]).join(', ');
  $('taskEditor').showModal();
 }
 function sortTasks(a,b,mode){
@@ -86,11 +87,11 @@ function sortTasks(a,b,mode){
 function renderTasks(){
  const search=$('taskSearch').value.trim().toLocaleLowerCase('ko');const plan=$('taskPlanFilter').value;
  const status=$('taskStatusFilter').value;const tag=$('taskTagFilter').value.trim().toLocaleLowerCase('ko');const sort=$('taskSort').value;
- const visible=tasks.filter(t=>(plan==='all'||t.planId===plan)&&(status==='all'||(status==='done'?taskDone(t):!taskDone(t)))&&(!search||t.title.toLocaleLowerCase('ko').includes(search))&&(!tag||(t.tags||[]).some(x=>x.toLocaleLowerCase('ko').includes(tag)))).sort((a,b)=>sortTasks(a,b,sort));
+ const visible=tasks.filter(t=>(plan==='all'||t.planId===plan)&&taskInPeriod(t)&&(status==='all'||(status==='done'?taskDone(t):!taskDone(t)))&&(!search||t.title.toLocaleLowerCase('ko').includes(search))&&(!tag||(t.tags||[]).some(x=>x.toLocaleLowerCase('ko').includes(tag)))).sort((a,b)=>sortTasks(a,b,sort));
  $('taskCount').textContent=`${tasks.length}개`;
  $('taskList').innerHTML=visible.length?visible.map(t=>{
  const p=plans.find(p=>p.id===t.planId);
- return `<article class="task-row ${taskDone(t)?'is-done':''}"><div class="task-main"><label class="task-check"><input type="checkbox" data-action="toggle" data-id="${esc(t.id)}" ${taskDone(t)?'checked':''}><span class="task-title">${esc(t.title)}</span></label><div class="task-detail"><span>${esc(p?.title||'연결 계획 없음')}</span><span>· ${esc(t.due||'마감일 미정')}</span><span>· 예상 ${t.minutes==null?'미정':esc(Math.floor(t.minutes/60))+'시간 '+esc(t.minutes%60)+'분'}</span><span>· ${t.repeat==='daily'?'매일 반복':'한 번만 완료'}</span><span>· ${esc(({high:'높음',normal:'보통',low:'낮음'})[t.priority]||'보통')}</span>${(t.tags||[]).map(tag=>`<span class="task-tag">#${esc(tag)}</span>`).join('')}</div></div><div class="task-buttons"><button class="ghost" data-action="edit" data-id="${esc(t.id)}">수정</button><button class="ghost danger" data-action="delete" data-id="${esc(t.id)}">삭제</button></div></article>`;
+ return `<article class="task-row ${taskDone(t)?'is-done':''}"><div class="task-main"><label class="task-check"><input type="checkbox" data-action="toggle" data-id="${esc(t.id)}" ${taskDone(t)?'checked':''}><span class="task-title">${esc(t.title)}</span></label><div class="task-detail"><span>${esc(p?.title||'연결 계획 없음')}</span><span>· ${esc(t.due||'마감일 미정')}</span><span>· 예상 ${t.minutes==null?'미정':esc(Math.floor(t.minutes/60))+'시간 '+esc(t.minutes%60)+'분'}</span><span>· ${esc(({high:'높음',normal:'보통',low:'낮음'})[t.priority]||'보통')}</span>${(t.tags||[]).map(tag=>`<span class="task-tag">#${esc(tag)}</span>`).join('')}</div></div><div class="task-buttons"><button class="ghost" data-action="edit" data-id="${esc(t.id)}">수정</button><button class="ghost danger" data-action="delete" data-id="${esc(t.id)}">삭제</button></div></article>`;
  }).join(''):'<div class="empty">조건에 맞는 할 일이 없어요. 실제로 할 일을 정하면 추가해 주세요.</div>';
  renderPlanPreviews();
 }
@@ -103,15 +104,15 @@ $('addTaskBtn').onclick=()=>openTaskEditor();
 $('taskClose').onclick=$('taskCancel').onclick=()=>$('taskEditor').close();
 $('taskForm').addEventListener('submit',e=>{
  e.preventDefault();const title=$('taskTitle').value.trim(),planId=$('taskPlan').value,due=$('taskDue').value,raw=$('taskMinutes').value,rawHours=$('taskHours').value;
- const repeat=$('taskRepeat').value;
+ 
  const minutes=raw===''&&rawHours===''?null:Number(rawHours||0)*60+Number(raw||0),priority=$('taskPriority').value,tags=[...new Set($('taskTags').value.split(',').map(s=>s.trim()).filter(Boolean))];
  if(!plans.some(p=>p.id===planId)){$('taskError').textContent='연결할 계획을 선택해주세요.';return}
  if(!title){$('taskError').textContent='할 일 내용을 입력해주세요.';return}
  if((raw!==''||rawHours!=='')&&(!Number.isSafeInteger(minutes)||minutes<0||!Number.isSafeInteger(Number(raw||0))||Number(raw||0)>59||!Number.isSafeInteger(Number(rawHours||0)))){$('taskError').textContent='예상 시간은 0 이상의 정수로 입력해주세요.';return}
  if(tags.some(t=>t.length>30)){$('taskError').textContent='태그는 각각 30자 이내로 입력해주세요.';return}
  const next=structuredClone(tasks),now=new Date().toISOString(),day=$('taskDay').value||selectedDay;
- if(editingTaskId){const t=next.find(t=>t.id===editingTaskId);if(!t)return;Object.assign(t,{planId,title,day,due,minutes,priority,tags,repeat,updatedAt:now});}
- else next.push({id:crypto.randomUUID(),planId,title,day,due,minutes,priority,tags,repeat,done:false,createdAt:now,updatedAt:now});
+ if(editingTaskId){const t=next.find(t=>t.id===editingTaskId);if(!t)return;Object.assign(t,{planId,title,day,due,minutes,priority,tags,updatedAt:now});}
+ else next.push({id:crypto.randomUUID(),planId,title,day,due,minutes,priority,tags,done:false,createdAt:now,updatedAt:now});
  if(saveTasks(next)){$('taskEditor').close();renderTasks();}
 });
 $('taskList').addEventListener('click',e=>{
@@ -124,7 +125,7 @@ function completionRange(){const a=new Date($('completeStart').value),b=new Date
 function openCompletion(id){
  const task=tasks.find(t=>t.id===id);if(!task)return;
  completingTaskId=id;$('completionTaskName').textContent=task.title;
- const previous=task.repeat==='daily'?dailyCompletion(task):executions.find(l=>l.taskId===id&&l.isCompletion);
+ const previous=dailyCompletion(task);
  const now=localDateTimeValue();
  $('completeStart').value=previous?localDateTimeValue(new Date(previous.startedAt)):now;
  $('completeEnd').value=previous?localDateTimeValue(new Date(previous.endedAt)):now;
@@ -140,11 +141,10 @@ $('taskList').addEventListener('change',e=>{
  if(!taskDone(task)){input.checked=false;openCompletion(task.id);return;}
  if(!confirm('완료를 취소할까요? 실행 기록은 남겨둡니다.')){input.checked=true;return;}
  const next=structuredClone(tasks),t=next.find(x=>x.id===task.id);
- if(t.repeat==='daily'){
-  const existing=dailyCompletion(t);if(!existing){input.checked=true;return;}
-  if(!remoteReady||!remoteMode){input.checked=true;return;}
-  executions=executions.filter(l=>l.id!==existing.id);
- }else{t.done=false;t.completedAt=null;}
+ const existing=dailyCompletion(t);if(!existing){input.checked=true;return;}
+ if(!remoteReady||!remoteMode){input.checked=true;return;}
+ executions=executions.filter(l=>l.id!==existing.id);
+ t.done=false;t.completedAt=null;
  t.updatedAt=new Date().toISOString();
  if(saveTasks(next)){renderTasks();renderReflections()}else input.checked=true;
 });
@@ -152,12 +152,12 @@ $('completionForm').addEventListener('submit',e=>{
  e.preventDefault();const range=completionRange(),task=tasks.find(t=>t.id===completingTaskId);
  if(!range||!task){$('completeError').textContent='시작·종료 시각을 확인해 주세요.';return;}
  const plan=plans.find(p=>p.id===task.planId),now=new Date().toISOString();
- if(task.repeat==='daily'&&seoulDay(range.endedAt)!==selectedDay){$('completeError').textContent='매일 반복 할 일의 종료 날짜는 현재 선택한 날짜와 같아야 해요.';return;}
- const nextLogs=structuredClone(executions),old=nextLogs.find(l=>l.taskId===task.id&&l.isCompletion&&(task.repeat!=='daily'||seoulDay(l.endedAt)===seoulDay(range.endedAt)));
+ if(seoulDay(range.endedAt)!==selectedDay){$('completeError').textContent='매일 반복 할 일의 종료 날짜는 현재 선택한 날짜와 같아야 해요.';return;}
+ const nextLogs=structuredClone(executions),old=nextLogs.find(l=>l.taskId===task.id&&l.isCompletion&&(seoulDay(l.endedAt)===seoulDay(range.endedAt)));
  const log={taskId:task.id,planId:task.planId,taskTitle:task.title,planTitle:plan?.title||'',...range,reason:$('completeReason').value.trim(),isCompletion:true};
  if(old)Object.assign(old,log);else nextLogs.push({id:crypto.randomUUID(),...log});
  const nextTasks=structuredClone(tasks),updated=nextTasks.find(t=>t.id===task.id);
- if(task.repeat!=='daily'){updated.done=true;updated.completedAt=range.endedAt;}updated.updatedAt=now;
+ updated.done=true;updated.completedAt=range.endedAt;updated.updatedAt=now;
  try{
   if(!remoteReady||!remoteMode)throw Error('server_unavailable');
 
@@ -281,7 +281,7 @@ function updateReflectionOptions(){
 let seeActiveGroup='seePlanned';
 function reflectionSelection(){
  const planId=$('reflectionPlan').value,from=$('reflectionFrom').value,to=$('reflectionTo').value;
- const selected=tasks.filter(t=>(planId==='all'||t.planId===planId)&&dayIn(taskDay(t),from,to));
+ const selected=tasks.filter(t=>(planId==='all'||t.planId===planId)&&(!from||!t.due||t.due>=from)&&(!to||!t.day||t.day<=to));
  const ids=new Set(selected.map(t=>t.id));
  const logs=executions.filter(l=>ids.has(l.taskId)&&dayIn(localDay(l.startedAt),from,to));
  const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
