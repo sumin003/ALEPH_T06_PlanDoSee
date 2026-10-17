@@ -103,7 +103,7 @@ $('taskForm').addEventListener('submit',e=>{
  const minutes=raw===''&&rawHours===''?null:Number(rawHours||0)*60+Number(raw||0),priority=$('taskPriority').value,tags=[...new Set($('taskTags').value.split(',').map(s=>s.trim()).filter(Boolean))];
  if(!plans.some(p=>p.id===planId)){$('taskError').textContent='연결할 계획을 선택해주세요.';return}
  if(!title){$('taskError').textContent='할 일 내용을 입력해주세요.';return}
- if(raw!==''&&(!Number.isSafeInteger(minutes)||minutes<0)){$('taskError').textContent='예상 시간은 0 이상의 정수로 입력해주세요.';return}
+ if((raw!==''||rawHours!=='')&&(!Number.isSafeInteger(minutes)||minutes<0||!Number.isSafeInteger(Number(raw||0))||Number(raw||0)>59||!Number.isSafeInteger(Number(rawHours||0)))){$('taskError').textContent='예상 시간은 0 이상의 정수로 입력해주세요.';return}
  if(tags.some(t=>t.length>30)){$('taskError').textContent='태그는 각각 30자 이내로 입력해주세요.';return}
  const next=structuredClone(tasks),now=new Date().toISOString(),day=$('taskDay').value||selectedDay;
  if(editingTaskId){const t=next.find(t=>t.id===editingTaskId);if(!t)return;Object.assign(t,{planId,title,day,due,minutes,priority,tags,updatedAt:now});}
@@ -260,7 +260,7 @@ if(!Array.isArray(reflections))reflections=[];
 const dayOf=iso=>String(iso||'').slice(0,10);
 const localDay=iso=>{const d=new Date(iso);if(!Number.isFinite(d.getTime()))return '';return [d.getFullYear(),String(d.getMonth()+1).padStart(2,'0'),String(d.getDate()).padStart(2,'0')].join('-')};
 const dayIn=(date,from,to)=>!!date&&(!from||date>=from)&&(!to||date<=to);
-const fmtMinutes=mins=>Number.isFinite(mins)?`${Math.round(mins*100)/100}분`:'미정';
+const fmtMinutes=mins=>{if(!Number.isFinite(mins))return '0분';const rounded=Math.round(Math.abs(mins));const hours=Math.floor(rounded/60),minutes=rounded%60;return hours?`${hours}시간${minutes?' '+minutes+'분':''}`:`${minutes}분`;};
 function updateReflectionOptions(){
  for(const id of ['reflectionPlan','reflectionNextPlan']){
   const select=$(id),prev=select.value;
@@ -272,43 +272,45 @@ function renderReflections(){
  updateReflectionOptions();
  const planId=$('reflectionPlan').value,from=$('reflectionFrom').value,to=$('reflectionTo').value;
  $('reflectionError').textContent=from&&to&&from>to?'시작 날짜는 종료 날짜보다 늦을 수 없어요.':'';
- const selected=tasks.filter(t=>(planId==='all'||t.planId===planId)&&dayIn(taskDay(t),from||selectedDay,to||selectedDay));
+ const selected=tasks.filter(t=>(planId==='all'||t.planId===planId)&&dayIn(taskDay(t),from,to));
  const ids=new Set(selected.map(t=>t.id));
- const logs=executions.filter(l=>ids.has(l.taskId)&&dayIn(localDay(l.startedAt),from||selectedDay,to||selectedDay));
+ const logs=executions.filter(l=>ids.has(l.taskId)&&dayIn(localDay(l.startedAt),from,to));
  const done=selected.filter(t=>t.done);
- const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
  const late=selected.filter(t=>!t.done&&t.due&&t.due<today);
  const blockedIds=new Set(logs.filter(l=>l.reason&&l.reason.trim()).map(l=>l.taskId));
  const blocked=selected.filter(t=>blockedIds.has(t.id));
  const estimated=selected.reduce((n,t)=>n+(Number.isFinite(Number(t.minutes))&&t.minutes!==null?Number(t.minutes):0),0);
- const estimatedKnown=true;
  const actual=logs.reduce((n,l)=>n+(Number(l.elapsedMs)||0),0)/60000;
  $('seePlanned').textContent=selected.length;$('seeDone').textContent=done.length;
  $('seeLate').textContent=late.length;$('seeBlocked').textContent=blocked.length;
  $('seeEstimated').textContent=fmtMinutes(estimated);$('seeActual').textContent=fmtMinutes(actual);
  const max=Math.max(estimated,actual,1);
- $('seeEstimatedBar').style.width=`${estimatedKnown?estimated/max*100:0}%`;
+ $('seeEstimatedBar').style.width=`${estimated/max*100}%`;
  $('seeActualBar').style.width=`${actual/max*100}%`;
- $('seeDifference').textContent=`실제 − 예상: ${actual-estimated<0?'-':'+'}${fmtMinutes(Math.abs(actual-estimated))} (미입력 예상 시간은 0분으로 계산)`;
+ $('seeDifference').textContent=`실제 − 예상: ${actual-estimated<0?'-':'+'}${fmtMinutes(Math.abs(actual-estimated))} · 예상 시간을 입력하지 않은 할 일은 0분으로 계산해요.`;
  $('seeBlockedList').innerHTML='<strong>막힌 이유가 있는 일</strong>'+(blocked.length?'<ul>'+blocked.map(t=>`<li>${esc(t.title)}: ${esc(logs.filter(l=>l.taskId===t.id&&l.reason?.trim()).map(l=>l.reason).join(' / '))}</li>`).join('')+'</ul>':'<p>기록된 막힌 이유가 없어요.</p>');
  $('seeLateList').innerHTML='<strong>지연된 일</strong>'+(late.length?'<ul>'+late.map(t=>`<li>${esc(t.title)} · 마감 ${esc(t.due)}</li>`).join('')+'</ul>':'<p>확인된 지연 항목이 없어요.</p>');
- $('incomingReflection').innerHTML=reflections.filter(r=>r.nextPlanId&&r.nextPlanId===planId).map(r=>`<p>${esc(r.text)}</p>`).join('')||'<p>선택한 계획으로 전달된 개선 메모가 없어요.</p>';
+ const targetPlan=$('reflectionNextPlan').value;
+ $('incomingReflection').innerHTML=targetPlan?reflections.filter(r=>r.nextPlanId===targetPlan).map(r=>`<p>${esc(r.text)}</p>`).join('')||'<p>이 계획으로 전달된 개선 메모가 없어요.</p>':'<p>위에서 계획을 선택하면 그 계획으로 전달된 개선 메모를 볼 수 있어요.</p>';
+ $('seeEvidencePanel').hidden=true;
  $('reflectionEntries').innerHTML=reflections.length?reflections.slice().reverse().map(r=>`<div class="reflection-entry"><button type="button" class="ghost" data-delete-reflection="${esc(r.id)}">삭제</button><small>${esc(new Date(r.createdAt).toLocaleString('ko-KR'))} · ${esc(r.sourcePlanTitle||'모든 계획')} → ${esc(r.nextPlanTitle||'다음 계획 미지정')}</small><p>${esc(r.text)}</p></div>`).join(''):'<p class="helper">아직 저장된 돌아보기가 없어요.</p>';
 }
-const evidenceIds=['seePlanned','seeDone','seeLate','seeBlocked','seeEstimated','seeActual'];
+const evidenceNames={seePlanned:'계획에 딸린 할 일',seeDone:'완료한 일',seeLate:'지연된 일',seeBlocked:'막힌 일',seeEstimated:'예상 시간',seeActual:'실제 시간'};
 document.querySelectorAll('[data-see-detail]').forEach(b=>b.addEventListener('click',()=>{
  const planId=$('reflectionPlan').value,from=$('reflectionFrom').value,to=$('reflectionTo').value;
- const selected=tasks.filter(t=>(planId==='all'||t.planId===planId)&&dayIn(taskDay(t),from||selectedDay,to||selectedDay));
+ const selected=tasks.filter(t=>(planId==='all'||t.planId===planId)&&dayIn(taskDay(t),from,to));
  const ids=new Set(selected.map(t=>t.id));
- const logs=executions.filter(l=>ids.has(l.taskId)&&dayIn(localDay(l.startedAt),from||selectedDay,to||selectedDay));
- const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Seoul',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+ const logs=executions.filter(l=>ids.has(l.taskId)&&dayIn(localDay(l.startedAt),from,to));
+ const today=new Date().toLocaleDateString('sv-SE',{timeZone:'Asia/Seoul'});
  const key=b.dataset.seeDetail;
  const items=key==='seeDone'?selected.filter(t=>t.done):key==='seeLate'?selected.filter(t=>!t.done&&t.due&&t.due<today):key==='seeBlocked'?selected.filter(t=>logs.some(l=>l.taskId===t.id&&l.reason?.trim())):selected;
- const lines=key==='seeActual'?logs.map(l=>`${l.taskTitle||tasks.find(t=>t.id===l.taskId)?.title||l.taskId} · ${durationText(l.elapsedMs)} · ${l.startedAt}`):items.map(t=>`${t.title} · ${t.id}${key==='seeEstimated'?' · 예상 '+fmtMinutes(Number(t.minutes)||0):''}`);
- $('seeEvidence').innerHTML='<strong>근거 기록 · '+esc(key)+'</strong>'+(lines.length?'<ul>'+lines.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<p>해당 기록이 없어요.</p>');
+ const lines=key==='seeActual'?logs.map(l=>`${l.taskTitle||tasks.find(t=>t.id===l.taskId)?.title||'연결된 할 일 없음'} · ${durationText(l.elapsedMs)} · ${new Date(l.startedAt).toLocaleDateString('ko-KR',{timeZone:'Asia/Seoul'})}`):items.map(t=>`${t.title}${key==='seeEstimated'?' · 예상 '+fmtMinutes(Number(t.minutes)||0):''}`);
+ $('seeEvidencePanel').hidden=false;
+ $('seeEvidence').innerHTML='<strong>'+esc(evidenceNames[key]||'집계')+'의 근거</strong>'+(lines.length?'<ul>'+lines.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'<p>해당 기록이 없어요.</p>');
  $('seeEvidence').scrollIntoView({behavior:'smooth',block:'nearest'});
 }));
-['reflectionPlan','reflectionFrom','reflectionTo'].forEach(id=>$(id).addEventListener('change',renderReflections));
+['reflectionPlan','reflectionFrom','reflectionTo','reflectionNextPlan'].forEach(id=>$(id).addEventListener('change',renderReflections));
 $('reflectionReset').onclick=()=>{$('reflectionFrom').value='';$('reflectionTo').value='';renderReflections()};
 $('reflectionSave').onclick=()=>{
  const text=$('reflectionText').value.trim(),source=$('reflectionPlan').value,next=$('reflectionNextPlan').value;
